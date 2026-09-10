@@ -8,6 +8,14 @@ const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: false },
   eslint: { ignoreDuringBuilds: false },
   transpilePackages: ['@sentinel/db', '@sentinel/shared', '@sentinel/ui', '@sentinel/ir'],
+  // @prisma/client uses a native library engine (.so.node / .dll.node) loaded via
+  // a require() relative to the package's original location. webpack bundles the
+  // surrounding JS but emits the .node require as external — then at runtime node
+  // resolves it relative to the bundle's __dirname (.next/server/), not the
+  // package, and the engine is never found. Mark it external so webpack emits
+  // require('@prisma/client') instead of inlining it; pnpm's public-hoist-pattern
+  // puts it in the root node_modules so node can find it from any package.
+  serverExternalPackages: ['@prisma/client', 'prisma'],
   experimental: { typedRoutes: false },
   async headers() {
     return [{
