@@ -76,6 +76,19 @@ async function runLocal(
   const runLog = logger.child({ runId: manifest.runId, shardIndex, strategy: 'local' });
 
   const shardArg = `--shard=${shardIndex + 1}/${shardTotal}`;
+
+  // Install workspace deps before running — the workspace package.json pins
+  // @playwright/test but has no node_modules yet.
+  runLog.info({ workDir }, 'Installing workspace dependencies');
+  await new Promise<void>((resolve, reject) => {
+    const install = spawn('npm', ['install', '--prefer-offline', '--silent'], {
+      cwd: workDir,
+      stdio: 'ignore',
+    });
+    install.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`npm install exited ${code}`))));
+    install.on('error', reject);
+  });
+
   const playwrightCmd = ['npx', `@playwright/test@${PLAYWRIGHT_VERSION}`, 'test', shardArg];
 
   runLog.info({ cmd: playwrightCmd.join(' '), workDir }, 'Spawning local playwright process');
