@@ -86,10 +86,17 @@ async function processScheduleJob(job: Job<ScheduleJobData>): Promise<void> {
   if (schedule.suiteId && schedule.suite) {
     testCaseIds = schedule.suite.items.map((i) => i.testCaseId);
   } else if (schedule.taskId) {
-    // Task-based schedule — for now just log; task execution is handled separately
-    logger.info({ scheduleId, taskId: schedule.taskId }, 'Task-based schedule fired');
-    await prisma.schedule.update({ where: { id: scheduleId }, data: { lastRunAt: new Date() } });
-    return;
+    // taskId == '__all__' means run every non-archived test in the project.
+    // Any other taskId value is treated as a single test case ID.
+    if (schedule.taskId === '__all__') {
+      const all = await prisma.testCase.findMany({
+        where: { projectId: schedule.projectId, isArchived: false },
+        select: { id: true },
+      });
+      testCaseIds = all.map((t) => t.id);
+    } else {
+      testCaseIds = [schedule.taskId];
+    }
   }
 
   if (testCaseIds.length === 0) {

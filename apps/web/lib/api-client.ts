@@ -233,6 +233,22 @@ export interface ProjectInsightsResponse {
   slowestTests: SlowestTestInsightResponse[];
 }
 
+export interface ScheduleResponse {
+  id: string;
+  projectId: string;
+  name: string;
+  cron: string;
+  timezone: string;
+  browsers: string[];
+  environmentId: string;
+  isEnabled: boolean;
+  overlapPolicy: string;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CreateProjectInput {
   name: string;
   slug: string;
@@ -553,6 +569,43 @@ export const apiClient = {
       method: 'POST',
       body: JSON.stringify({ failedOnly: failedOnly ?? false }),
     });
+  },
+
+  // Schedules
+  getSchedules(projectSlug: string): Promise<ScheduleResponse[]> {
+    return request<ScheduleResponse[]>(`/projects/${projectSlug}/schedules`);
+  },
+
+  createSchedule(
+    projectSlug: string,
+    input: {
+      name: string;
+      cron: string;
+      environmentId: string;
+      browsers?: string[];
+      timezone?: string;
+      isEnabled?: boolean;
+    },
+  ): Promise<ScheduleResponse> {
+    return request<ScheduleResponse>(`/projects/${projectSlug}/schedules`, {
+      method: 'POST',
+      body: JSON.stringify({ ...input, taskId: '__all__', browsers: input.browsers ?? ['CHROMIUM'] }),
+    });
+  },
+
+  toggleSchedule(scheduleId: string, isEnabled: boolean): Promise<ScheduleResponse> {
+    return request<ScheduleResponse>(`/schedules/${scheduleId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isEnabled }),
+    });
+  },
+
+  deleteSchedule(scheduleId: string): Promise<void> {
+    return request<void>(`/schedules/${scheduleId}`, { method: 'DELETE' });
+  },
+
+  triggerSchedule(scheduleId: string): Promise<{ runId: string }> {
+    return request<{ runId: string }>(`/schedules/${scheduleId}/trigger`, { method: 'POST' });
   },
 
   // Auth
