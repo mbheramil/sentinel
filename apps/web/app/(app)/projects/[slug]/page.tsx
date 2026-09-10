@@ -56,7 +56,7 @@ const TAB_LINKS = [
   { href: 'insights', label: 'Insights', icon: TrendingUpIcon },
   { href: 'schedules', label: 'Schedules', icon: CalendarIcon, disabled: true },
   { href: 'settings', label: 'Settings', icon: SettingsIcon, disabled: true },
-] as const;
+];
 
 export default function ProjectPage({ params }: Props) {
   const { slug } = use(params);

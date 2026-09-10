@@ -242,6 +242,17 @@ export async function phase3Routes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authPreHandler);
   const a = app.withTypeProvider<ZodTypeProvider>();
 
+  // Resolve project slug → real cuid
+  a.addHook('preHandler', async (req) => {
+    const p = req.params as Record<string, string>;
+    for (const key of ['id', 'projectId']) {
+      if (p[key] && !/^c[a-z0-9]{24,}/.test(p[key])) {
+        const proj = await prisma.project.findFirst({ where: { slug: p[key] }, select: { id: true } });
+        if (proj) p[key] = proj.id;
+      }
+    }
+  });
+
   // ── SUITES ────────────────────────────────────────────────────────────────
 
   // GET /projects/:projectId/suites

@@ -62,11 +62,18 @@ export async function resolveActor(
 
 /** Look up the orgId that owns a project. Returns null when project not found. */
 export async function getProjectOrgId(projectId: string): Promise<string | null> {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    select: { orgId: true },
-  });
+  // Support both cuid ID and slug
+  let project = await prisma.project.findUnique({ where: { id: projectId }, select: { orgId: true } });
+  if (!project) {
+    project = await prisma.project.findFirst({ where: { slug: projectId }, select: { orgId: true } });
+  }
   return project?.orgId ?? null;
+}
+
+export async function resolveProjectId(slugOrId: string): Promise<string | null> {
+  let project = await prisma.project.findUnique({ where: { id: slugOrId }, select: { id: true } });
+  if (!project) project = await prisma.project.findFirst({ where: { slug: slugOrId }, select: { id: true } });
+  return project?.id ?? null;
 }
 
 /** Look up the orgId that owns a test case (via project). Returns null when not found. */

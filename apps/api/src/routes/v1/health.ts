@@ -71,3 +71,13 @@ export async function healthRoutes(app: FastifyInstance) {
     ].join('\n'));
   });
 }
+
+// Temporary debug route — remove after fix
+export async function debugRoutes(app: any) {
+  app.get('/debug/cookies', async (req: any, reply: any) => {
+    return reply.send({ 
+      cookie_header: req.headers['cookie'] || 'none',
+      auth_header: req.headers['authorization'] || 'none'
+    });
+  });
+}

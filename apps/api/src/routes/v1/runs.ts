@@ -16,6 +16,8 @@ const ErrorSchema = z.object({
 const RunSummaryShape = z.object({
   id: z.string(),
   projectId: z.string(),
+  environmentId: z.string(),
+  suiteId: z.string().nullable().optional(),
   status: z.string(),
   trigger: z.string(),
   browsers: z.array(z.string()),
@@ -29,11 +31,19 @@ const RunSummaryShape = z.object({
   finishedAt: z.string().nullable(),
   durationMs: z.number().nullable(),
   createdAt: z.string(),
+  environment: z.object({
+    id: z.string(),
+    name: z.string(),
+    baseUrl: z.string(),
+    isDefault: z.boolean(),
+  }).optional(),
 });
 
 function serializeRun(r: {
   id: string;
   projectId: string;
+  environmentId?: string;
+  suiteId?: string | null;
   status: string;
   trigger: string;
   browsers: string[];
@@ -47,6 +57,7 @@ function serializeRun(r: {
   finishedAt: Date | null;
   durationMs: number | null;
   createdAt: Date;
+  environment?: { id: string; name: string; baseUrl: string; isDefault: boolean } | null;
 }) {
   return {
     ...r,
@@ -60,6 +71,17 @@ function serializeRun(r: {
 export async function runRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authPreHandler);
   const a = app.withTypeProvider<ZodTypeProvider>();
+
+  // Resolve project slug → real cuid for all routes in this plugin
+  a.addHook('preHandler', async (req) => {
+    const p = req.params as Record<string, string>;
+    for (const key of ['id', 'projectId']) {
+      if (p[key] && !/^c[a-z0-9]{24,}/.test(p[key])) {
+        const proj = await prisma.project.findFirst({ where: { slug: p[key] }, select: { id: true } });
+        if (proj) p[key] = proj.id;
+      }
+    }
+  });
 
   // ── POST /projects/:id/runs ────────────────────────────────────────────────
   a.post(
@@ -198,6 +220,65 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+
+  // ── GET /projects/:id/runs ────────────────────────────────────────────────
+  a.get(
+    '/projects/:id/runs',
+    {
+      schema: {
+        params: z.object({ id: z.string() }),
+        querystring: z.object({
+          status: z.string().optional(),
+          page: z.coerce.number().int().min(1).default(1),
+          perPage: z.coerce.number().int().min(1).max(100).default(20),
+        }),
+        response: {
+          200: z.object({
+            data: z.array(RunSummaryShape),
+            meta: z.object({ page: z.number(), perPage: z.number(), total: z.number() }),
+          }),
+          401: ErrorSchema,
+          403: ErrorSchema,
+          404: ErrorSchema,
+        },
+      },
+    },
+    async (req, reply) => {
+      const orgId = await getProjectOrgId(req.params.id);
+      if (!orgId) {
+        return reply.status(404).send({ error: { code: ERROR_CODES.NOT_FOUND, message: 'Project not found' } });
+      }
+
+      const actor = await resolveActor(req, reply, orgId);
+      if (!actor) return;
+
+      const { status, page, perPage } = req.query;
+
+      const where = {
+        projectId: req.params.id,
+        ...(status ? { status: status as never } : {}),
+      };
+
+      const [runs, total] = await Promise.all([
+        prisma.run.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * perPage,
+          take: perPage,
+          include: {
+            environment: { select: { id: true, name: true, baseUrl: true, isDefault: true } },
+          },
+        }),
+        prisma.run.count({ where }),
+      ]);
+
+      return reply.status(200).send({
+        data: runs.map(serializeRun),
+        meta: { page, perPage, total },
+      });
+    },
+  );
+
   // ── GET /runs ──────────────────────────────────────────────────────────────
   a.get(
     '/runs',
@@ -277,6 +358,8 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
           select: {
             id: true,
             projectId: true,
+            environmentId: true,
+            suiteId: true,
             status: true,
             trigger: true,
             browsers: true,

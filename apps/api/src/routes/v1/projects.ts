@@ -111,12 +111,32 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     '/projects',
     {
       schema: {
-        body: CreateProjectSchema.extend({ orgId: z.string().min(1) }),
-        response: { 201: ProjectShape, 401: ErrorSchema, 403: ErrorSchema, 409: ErrorSchema },
+        body: CreateProjectSchema.extend({ orgId: z.string().min(1).optional() }),
+        response: { 201: ProjectShape, 401: ErrorSchema, 403: ErrorSchema, 409: ErrorSchema, 400: ErrorSchema },
       },
     },
     async (req, reply) => {
-      const { orgId, ...data } = req.body;
+      let orgId = req.body.orgId;
+      const { orgId: _omit, ...data } = req.body;
+
+      // Derive orgId from session if not provided
+      if (!orgId) {
+        if (!req.identity) {
+          return reply.status(401).send({ error: { code: ERROR_CODES.UNAUTHENTICATED, message: 'Authentication required' } });
+        }
+        if (req.identity.type === 'apiKey') {
+          orgId = req.identity.orgId!;
+        } else {
+          const membership = await prisma.membership.findFirst({
+            where: { userId: req.identity.userId! },
+            select: { orgId: true },
+          });
+          if (!membership) {
+            return reply.status(403).send({ error: { code: ERROR_CODES.FORBIDDEN, message: 'No organisation membership found' } });
+          }
+          orgId = membership.orgId;
+        }
+      }
 
       const actor = await resolveActor(req, reply, orgId);
       if (!actor) return;
@@ -148,7 +168,11 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     async (req, reply) => {
-      const project = await prisma.project.findUnique({ where: { id: req.params.id } });
+      // Support both cuid ID and slug lookup
+      let project = await prisma.project.findUnique({ where: { id: req.params.id } });
+      if (!project) {
+        project = await prisma.project.findFirst({ where: { slug: req.params.id } });
+      }
       if (!project) {
         return reply.status(404).send({
           error: { code: ERROR_CODES.NOT_FOUND, message: 'Project not found' },
@@ -173,10 +197,8 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     async (req, reply) => {
-      const project = await prisma.project.findUnique({
-        where: { id: req.params.id },
-        select: { orgId: true },
-      });
+      let project = await prisma.project.findUnique({ where: { id: req.params.id }, select: { id: true, orgId: true } });
+      if (!project) project = await prisma.project.findFirst({ where: { slug: req.params.id }, select: { id: true, orgId: true } });
       if (!project) {
         return reply.status(404).send({
           error: { code: ERROR_CODES.NOT_FOUND, message: 'Project not found' },
@@ -189,7 +211,7 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
       authorize(actor, 'projects:update');
 
       const updated = await prisma.project.update({
-        where: { id: req.params.id },
+        where: { id: project.id },
         data: req.body,
       });
 
@@ -212,10 +234,8 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     async (req, reply) => {
-      const project = await prisma.project.findUnique({
-        where: { id: req.params.id },
-        select: { orgId: true },
-      });
+      let project = await prisma.project.findUnique({ where: { id: req.params.id }, select: { id: true, orgId: true } });
+      if (!project) project = await prisma.project.findFirst({ where: { slug: req.params.id }, select: { id: true, orgId: true } });
       if (!project) {
         return reply.status(404).send({
           error: { code: ERROR_CODES.NOT_FOUND, message: 'Project not found' },
@@ -227,7 +247,7 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
 
       authorize(actor, 'projects:delete');
 
-      await prisma.project.delete({ where: { id: req.params.id } });
+      await prisma.project.delete({ where: { id: project.id } });
       return reply.status(200).send({ ok: true });
     },
   );

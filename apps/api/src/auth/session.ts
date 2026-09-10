@@ -29,7 +29,8 @@ function parseCookies(header: string): Record<string, string> {
 function deriveEncryptionKey(secret: string, salt: string): Uint8Array {
   const buf = hkdfSync('sha256', secret, salt, `Auth.js Generated Encryption Key (${salt})`, 64);
   // jose v5 requires plain Uint8Array, not Node Buffer
-  return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+  // hkdfSync returns ArrayBuffer (not Buffer) in Node >=15, so use new Uint8Array(buf) directly
+  return new Uint8Array(buf as ArrayBuffer);
 }
 
 export async function verifySession(req: FastifyRequest): Promise<SessionIdentity | null> {

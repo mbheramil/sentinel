@@ -289,13 +289,13 @@ export async function fireNotifications(payload: NotificationPayload): Promise<v
 
       // Enqueue BullMQ job
       await queue.add(
-        `notif:${notification.id}`,
+        `notif_${notification.id}`,
         {
           integrationId: integration.id,
           notificationId: notification.id,
           payload,
         },
-        { jobId: `notif:${notification.id}` },
+        { jobId: `notif_${notification.id}` },
       );
 
       logger.info({ integrationId: integration.id, notificationId: notification.id, event: payload.event }, 'Notification enqueued');

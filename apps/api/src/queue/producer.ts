@@ -41,7 +41,7 @@ export async function enqueueRun(
   projectId: string,
 ): Promise<void> {
   const queue = getQueue();
-  const jobId = `run:${runId}:shard:${shardIndex}`;
+  const jobId = `run_${runId}_shard_${shardIndex}`;
   const payload: RunJobPayload = { runId, shardIndex, shardTotal, projectId, attempt: 1 };
 
   await queue.add(jobId, payload, { jobId });
