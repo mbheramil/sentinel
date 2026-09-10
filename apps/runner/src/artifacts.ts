@@ -92,7 +92,7 @@ async function uploadArtifact(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${runnerToken}`,
+        'x-runner-token': runnerToken,
       },
       body: JSON.stringify({
         kind,

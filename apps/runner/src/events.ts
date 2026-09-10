@@ -66,7 +66,7 @@ async function flushBatch(
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-ndjson',
-        Authorization: `Bearer ${runnerToken}`,
+        'x-runner-token': runnerToken,
       },
       body: ndjson,
     });
