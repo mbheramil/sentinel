@@ -164,6 +164,8 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
         body: z.object({}).optional(),
         response: {
           200: TriageResponseSchema,
+          // 400: attempt is not in a triageable state.
+          400: ErrorSchema,
           401: ErrorSchema,
           402: ErrorSchema,
           403: ErrorSchema,

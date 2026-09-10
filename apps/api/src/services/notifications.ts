@@ -1,5 +1,5 @@
 import { Queue, Worker, type Job } from 'bullmq';
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 import { prisma } from '@sentinel/db';
 import { getRedis } from '../lib/redis.js';
 import { logger } from '../logger.js';

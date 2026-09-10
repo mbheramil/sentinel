@@ -9,7 +9,7 @@ import { createHmac } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { prisma } from '@sentinel/db';
+import { prisma, Prisma, type Browser } from '@sentinel/db';
 import { ERROR_CODES } from '@sentinel/shared';
 import { authPreHandler } from '../../auth/middleware.js';
 import { resolveActor, getProjectOrgId } from '../../lib/actor.js';
@@ -57,6 +57,24 @@ async function getTaskOrgId(taskId: string): Promise<string | null> {
     select: { project: { select: { orgId: true } } },
   });
   return task?.project.orgId ?? null;
+}
+
+/**
+ * Convert a Zod-validated object into a value Prisma accepts for a nullable
+ * Json column.
+ *
+ * `z.record(z.unknown())` yields `Record<string, unknown>`, and `unknown` is not
+ * assignable to `Prisma.InputJsonValue` — but the value came off a parsed JSON
+ * body, so it is JSON-serialisable by construction. An explicit `null` means
+ * "clear the column", which Prisma spells `DbNull`; a bare `null` would be read
+ * as "no change".
+ */
+function toJsonInput(
+  value: Record<string, unknown> | null | undefined,
+): Prisma.InputJsonValue | typeof Prisma.DbNull | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return Prisma.DbNull;
+  return value as Prisma.InputJsonValue;
 }
 
 // ─── Suite shapes ───────────────────────────────────────────────────────────
@@ -309,7 +327,7 @@ export async function phase3Routes(app: FastifyInstance): Promise<void> {
           name: req.body.name,
           description: req.body.description,
           mode: req.body.mode,
-          tagQuery: req.body.tagQuery,
+          tagQuery: toJsonInput(req.body.tagQuery),
         },
       });
 
@@ -367,7 +385,11 @@ export async function phase3Routes(app: FastifyInstance): Promise<void> {
 
       const suite = await prisma.suite.update({
         where: { id: req.params.id },
-        data: req.body,
+        data: {
+          ...req.body,
+          // Json column: needs DbNull to clear, so it can't ride along in the spread.
+          tagQuery: toJsonInput(req.body.tagQuery),
+        },
       });
 
       return reply.status(200).send(serializeSuite(suite));
@@ -734,7 +756,9 @@ export async function phase3Routes(app: FastifyInstance): Promise<void> {
         return reply.status(422).send({ error: { code: ERROR_CODES.VALIDATION_FAILED, message: 'No valid test cases' } });
       }
 
-      const browsers = schedule.browsers as string[];
+      // Stored as Json, but the values are always Prisma `Browser` enum members
+      // — validated on write by the schedule create/update routes.
+      const browsers = schedule.browsers as Browser[];
 
       const run = await prisma.$transaction(async (tx) => {
         const r = await tx.run.create({
@@ -757,7 +781,7 @@ export async function phase3Routes(app: FastifyInstance): Promise<void> {
           testCaseId: string;
           testVersionId: string;
           shardIndex: number;
-          browser: string;
+          browser: Browser;
           projectLabel: string;
         }[] = [];
 
@@ -1220,11 +1244,18 @@ export async function phase3Routes(app: FastifyInstance): Promise<void> {
         }
       }
 
-      const where = {
+      // One clause per key: a single `path: Object.keys(...)` would be read as a
+      // nested path (a → b) rather than "a matches AND b matches", and would
+      // compare every key against only the first value.
+      const matchClauses: Prisma.CaptureEventWhereInput[] = Object.entries(matchFilter ?? {}).map(
+        ([key, value]) => ({ body: { path: [key], equals: value as Prisma.InputJsonValue } }),
+      );
+
+      const where: Prisma.CaptureEventWhereInput = {
         captureEndpointId: req.params.id,
         ...(since ? { receivedAt: { gte: new Date(since) } } : {}),
         ...(runId ? { runId } : {}),
-        ...(matchFilter ? { body: { path: Object.keys(matchFilter), equals: Object.values(matchFilter)[0] } } : {}),
+        ...(matchClauses.length > 0 ? { AND: matchClauses } : {}),
       };
 
       const [events, total] = await Promise.all([
@@ -1470,8 +1501,8 @@ export async function hookRoutes(app: FastifyInstance): Promise<void> {
           data: {
             captureEndpointId: endpoint.id,
             method: req.method,
-            headers: req.headers as Record<string, unknown>,
-            body: req.body != null ? (req.body as Record<string, unknown>) : undefined,
+            headers: req.headers as Prisma.InputJsonValue,
+            body: toJsonInput(req.body != null ? (req.body as Record<string, unknown>) : undefined),
             rawBody: Buffer.from(JSON.stringify(req.body ?? {})),
             sourceIp: req.ip,
           },

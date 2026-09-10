@@ -43,7 +43,9 @@ export async function healthRoutes(app: FastifyInstance) {
 
     // Redis check
     try {
-      const { default: Redis } = await import('ioredis');
+      // Named export, not default: ioredis is CJS, so under NodeNext the
+      // default binding is the whole module namespace, not the class.
+      const { Redis } = await import('ioredis');
       const { config } = await import('../../config.js');
       const redis = new Redis(config.REDIS_URL, { lazyConnect: true, connectTimeout: 3000 });
       await redis.ping();
@@ -69,15 +71,5 @@ export async function healthRoutes(app: FastifyInstance) {
       '# TYPE sentinel_up gauge',
       'sentinel_up 1',
     ].join('\n'));
-  });
-}
-
-// Temporary debug route — remove after fix
-export async function debugRoutes(app: any) {
-  app.get('/debug/cookies', async (req: any, reply: any) => {
-    return reply.send({ 
-      cookie_header: req.headers['cookie'] || 'none',
-      auth_header: req.headers['authorization'] || 'none'
-    });
   });
 }

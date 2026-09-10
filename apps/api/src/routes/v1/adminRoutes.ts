@@ -15,7 +15,7 @@ import { hasMinRole } from '../../auth/rbac.js';
 import { getQueue } from '../../queue/producer.js';
 import { getRedis } from '../../lib/redis.js';
 import { Queue } from 'bullmq';
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 
 const ErrorSchema = z.object({
   error: z.object({ code: z.string(), message: z.string() }),
@@ -127,6 +127,14 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         where: {
           status: 'RUNNING',
           runnerId: { not: null },
+          // Only runners that have checked in recently. Without this bound a
+          // crashed runner keeps showing up as healthy, with its slots
+          // permanently "in use", until the orphan reaper gets to its shards.
+          // Shards claimed moments ago have not sent a heartbeat yet.
+          OR: [
+            { heartbeatAt: { gte: twoMinutesAgo } },
+            { heartbeatAt: null, claimedAt: { gte: twoMinutesAgo } },
+          ],
         },
         select: {
           runnerId: true,

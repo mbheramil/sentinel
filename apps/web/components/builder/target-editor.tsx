@@ -24,30 +24,40 @@ const BY_OPTIONS = [
 
 type ByValue = (typeof BY_OPTIONS)[number]['value'];
 
+/** The part of a Target that survives a change of `by`. */
+type TargetCommon = { nth?: number; frame?: Target; within?: Target };
+
+/**
+ * Carry over the locator-independent fields. Keys are only set when present so
+ * the serialized IR stays free of explicit `undefined`s — and the return type is
+ * `TargetCommon` rather than `Partial<Target>`, which would make every spread
+ * below re-introduce optional `role`/`value` and break the discriminated union.
+ */
+function commonOf(existing: Target): TargetCommon {
+  const common: TargetCommon = {};
+  if (existing.nth !== undefined) common.nth = existing.nth;
+  if (existing.frame !== undefined) common.frame = existing.frame;
+  if (existing.within !== undefined) common.within = existing.within;
+  return common;
+}
+
 function defaultForBy(by: ByValue, existing: Target): Target {
-  const common = {
-    nth: existing.nth,
-    frame: existing.frame,
-    within: existing.within,
-  } as const;
-  const commonFiltered = Object.fromEntries(
-    Object.entries(common).filter(([, v]) => v !== undefined),
-  ) as Partial<Target>;
+  const common = commonOf(existing);
 
   switch (by) {
     case 'role':
-      return { by: 'role', role: '', ...commonFiltered };
+      return { by: 'role', role: '', ...common };
     case 'label':
     case 'placeholder':
     case 'text':
     case 'altText':
     case 'title':
-      return { by, value: '', ...commonFiltered };
+      return { by, value: '', ...common };
     case 'testId':
-      return { by: 'testId', value: '', ...commonFiltered };
+      return { by: 'testId', value: '', ...common };
     case 'css':
     case 'xpath':
-      return { by, value: '', ...commonFiltered };
+      return { by, value: '', ...common };
   }
 }
 

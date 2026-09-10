@@ -1,6 +1,6 @@
 import { Queue, Worker, type Job } from 'bullmq';
-import type Redis from 'ioredis';
-import { prisma } from '@sentinel/db';
+import type { Redis } from 'ioredis';
+import { prisma, type Browser } from '@sentinel/db';
 import { getRedis } from '../lib/redis.js';
 import { logger } from '../logger.js';
 import { enqueueRun } from '../queue/producer.js';
@@ -20,7 +20,7 @@ interface ScheduleRecord {
   name: string;
   cron: string;
   timezone: string;
-  browsers: string[];
+  browsers: Browser[];
   isEnabled: boolean;
   overlapPolicy: string;
 }
@@ -109,7 +109,9 @@ async function processScheduleJob(job: Job<ScheduleJobData>): Promise<void> {
     return;
   }
 
-  const browsers = schedule.browsers as string[];
+  // Stored as Json in the schema, but the values are always Prisma `Browser`
+  // enum members — validated on write by the schedule create/update routes.
+  const browsers = schedule.browsers as Browser[];
 
   const run = await prisma.$transaction(async (tx) => {
     const r = await tx.run.create({
@@ -134,7 +136,7 @@ async function processScheduleJob(job: Job<ScheduleJobData>): Promise<void> {
       testCaseId: string;
       testVersionId: string;
       shardIndex: number;
-      browser: string;
+      browser: Browser;
       projectLabel: string;
     }[] = [];
 

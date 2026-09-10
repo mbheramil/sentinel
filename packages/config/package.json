@@ -2,6 +2,7 @@
   "name": "@sentinel/config",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "exports": {
     "./eslint": "./eslint.js",
     "./tsconfig": "./tsconfig.json",

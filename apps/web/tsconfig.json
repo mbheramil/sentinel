@@ -6,7 +6,13 @@
         "./*"
       ]
     },
-    "noEmit": true
+    "noEmit": true,
+    // The shared base turns declarations on for the publishable packages. A Next
+    // app never emits any, and leaving it on makes TS demand portable type names
+    // for next-auth's inferred exports, which pnpm's nested layout can't provide
+    // (TS2742).
+    "declaration": false,
+    "declarationMap": false
   },
   "include": [
     "next-env.d.ts",

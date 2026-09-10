@@ -13,12 +13,19 @@ declare module 'next-auth' {
   }
 }
 
-declare module 'next-auth/jwt' {
-  interface JWT {
-    userId?: string;
-    orgId?: string;
-    role?: string;
-  }
+/**
+ * The claims this app puts on the JWT.
+ *
+ * Declared locally rather than via `declare module 'next-auth/jwt'`: in
+ * next-auth v5 that path is a bare re-export of `@auth/core/jwt`, so augmenting
+ * it does nothing — and `@auth/core` is a transitive dependency that pnpm does
+ * not expose here, so it cannot be augmented either. `JWT` extends
+ * `Record<string, unknown>`, so writes are fine and only reads need narrowing.
+ */
+interface SentinelClaims {
+  userId?: string;
+  orgId?: string;
+  role?: string;
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -67,9 +74,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return token;
     },
     async session({ session, token }) {
-      session.user.userId = token.userId as string;
-      session.user.orgId = token.orgId;
-      session.user.role = token.role;
+      const claims = token as SentinelClaims;
+      session.user.userId = claims.userId ?? '';
+      session.user.orgId = claims.orgId;
+      session.user.role = claims.role;
       return session;
     },
   },

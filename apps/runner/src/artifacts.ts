@@ -2,7 +2,6 @@ import { readdirSync, statSync, createReadStream, createWriteStream } from 'fs';
 import { Readable } from 'stream';
 import { join, extname, basename } from 'path';
 import archiver from 'archiver';
-import { buildScrubber } from './events.js';
 import { logger } from './logger.js';
 import { config } from './config.js';
 import type { ShardManifest } from './types.js';
@@ -66,13 +65,19 @@ async function zipReport(reportDir: string, destZip: string): Promise<void> {
 
 // ── Presign + upload one artifact ────────────────────────────────────────────
 
+/**
+ * Artifacts are uploaded byte-for-byte. They are binary (PNG, WebM, trace and
+ * report zips), so the string-replacement scrubber used on the event stream in
+ * `events.ts` cannot be applied here — a secret that a test echoes into a
+ * screenshot or trace reaches storage as-is. Guard against that by keeping
+ * secrets out of rendered output, not by relying on this path to redact them.
+ */
 async function uploadArtifact(
   filePath: string,
   kind: ArtifactKind,
   targetId: string,
   targetType: 'attempt' | 'run',
   runnerToken: string,
-  scrub: (s: string) => string,
 ): Promise<void> {
   const artLog = logger.child({ filePath, kind, targetId, targetType });
 
@@ -123,7 +128,6 @@ async function uploadArtifact(
         'Content-Type': kind === 'SCREENSHOT' ? 'image/png' : 'application/octet-stream',
       },
       // Required by undici when body is a ReadableStream
-      // @ts-expect-error — duplex is not in the TS lib types yet
       duplex: 'half',
     });
 
@@ -150,7 +154,6 @@ export async function collectAndUploadArtifacts(
   attemptMap: Map<string, string> = new Map(),
 ): Promise<void> {
   const runLog = logger.child({ runId: manifest.runId });
-  const scrub = buildScrubber(manifest.environment.secrets);
 
   let totalBytes = 0;
 
@@ -193,7 +196,6 @@ export async function collectAndUploadArtifacts(
           attemptId,
           'attempt',
           config.RUNNER_TOKEN,
-          scrub,
         );
         matched = true;
         break;
@@ -208,7 +210,6 @@ export async function collectAndUploadArtifacts(
         manifest.runId,
         'run',
         config.RUNNER_TOKEN,
-        scrub,
       );
     }
   }
@@ -228,7 +229,6 @@ export async function collectAndUploadArtifacts(
         manifest.runId,
         'run',
         config.RUNNER_TOKEN,
-        scrub,
       );
       runLog.info({ zipSize }, 'HTML report uploaded');
     } else {

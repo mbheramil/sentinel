@@ -146,15 +146,33 @@ async function sendViaResend(
 
 // ─── SMTP via nodemailer ─────────────────────────────────────────────────────
 
+/** Minimal structural type for the optional `nodemailer` dependency. */
+interface NodemailerTransport {
+  sendMail(opts: {
+    from: string;
+    to: string;
+    subject: string;
+    html: string;
+  }): Promise<unknown>;
+}
+
+interface NodemailerModule {
+  createTransport: (url: string) => NodemailerTransport;
+  default?: { createTransport: (url: string) => NodemailerTransport };
+}
+
 async function sendViaSmtp(
   emailConfig: EmailConfig,
   subject: string,
   htmlBody: string,
 ): Promise<void> {
-  // Dynamic import — nodemailer is optional
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const nodemailer = await import('nodemailer').catch(() => null);
-  if (!nodemailer) {
+  // nodemailer is an optional dependency: SMTP is only one of several delivery
+  // routes, so we don't force everyone to install it. The specifier goes through
+  // a variable on purpose — a literal would make TS try to resolve a module that
+  // legitimately may not be present and fail the build with TS2307.
+  const specifier = 'nodemailer';
+  const mod = (await import(specifier).catch(() => null)) as NodemailerModule | null;
+  if (!mod) {
     throw new Error('nodemailer is not installed and RESEND_API_KEY is not set');
   }
 
@@ -165,9 +183,10 @@ async function sendViaSmtp(
   const to = Array.isArray(emailConfig.to) ? emailConfig.to.join(', ') : emailConfig.to;
   const from = emailConfig.from ?? config.MAIL_FROM;
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-  const transporter = nodemailer.default.createTransport(config.SMTP_URL);
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+  // Both ESM (`.default`) and CJS interop shapes are possible depending on how
+  // the consumer's bundler/runtime resolves it.
+  const createTransport = mod.default?.createTransport ?? mod.createTransport;
+  const transporter = createTransport(config.SMTP_URL);
   await transporter.sendMail({ from, to, subject, html: htmlBody });
 }
 

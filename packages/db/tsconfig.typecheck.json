@@ -1,0 +1,14 @@
+{
+  // `tsconfig.json` is the *build* config: it emits from `src` only, so
+  // `prisma/seed.ts` — which really runs, under tsx, and creates the demo users —
+  // was never type-checked or lintable. This config covers the whole package and
+  // is what `typecheck` and ESLint use; it emits nothing.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "rootDir": "."
+  },
+  "include": ["src/**/*", "prisma/**/*.ts"]
+}

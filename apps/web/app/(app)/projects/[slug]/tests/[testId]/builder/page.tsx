@@ -27,8 +27,6 @@ interface Props {
   params: Promise<{ slug: string; testId: string }>;
 }
 
-const EMPTY_IR: StepIr = { version: 1, steps: [] };
-
 function parseStepsIr(raw: unknown): Step[] {
   if (!raw || typeof raw !== 'object') return [];
   const ir = raw as { version?: unknown; steps?: unknown };

@@ -31,7 +31,8 @@ export async function aggregateRunShards(runId: string): Promise<void> {
         select: {
           status: true,
           durationMs: true,
-          testCase: { select: { isMuted: true } },
+          // NB: `testCase` is selected once, further down, with both isMuted and
+          // name. A duplicate key here was silently overriding it.
           attempts: {
             orderBy: { index: 'desc' },
             take: 1,
@@ -145,7 +146,8 @@ export async function aggregateRunShards(runId: string): Promise<void> {
 
   // Determine event type (recovered = prev run failed, this one passed)
   let event: NotificationPayload['event'] = 'run.passed';
-  if (finalStatus === 'FAILED' || finalStatus === 'ERROR' || finalStatus === 'TIMED_OUT') {
+  // Timeouts are folded into FAILED above, so there is no TIMED_OUT case here.
+  if (finalStatus === 'FAILED' || finalStatus === 'ERROR') {
     event = 'run.failed';
   } else if (flaky > 0 && failed === 0) {
     event = 'run.flaky';

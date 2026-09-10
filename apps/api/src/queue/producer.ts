@@ -1,5 +1,5 @@
 import { Queue } from 'bullmq';
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 import { getRedis } from '../lib/redis.js';
 import { logger } from '../logger.js';
 

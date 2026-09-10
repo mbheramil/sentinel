@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import Table from 'cli-table3';
 import type { Command } from 'commander';
-import { api, ApiError, pollRun, TERMINAL_STATUSES, type RunStatus } from '../api.js';
+import { api, ApiError, pollRun, type RunStatus } from '../api.js';
 import { loadProjectConfig } from '../config.js';
 import { writeJUnit } from '../reporters/junit.js';
 

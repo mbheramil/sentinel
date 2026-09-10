@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { prisma } from '@sentinel/db';
+import { prisma, type Browser } from '@sentinel/db';
 import { ERROR_CODES, CreateRunSchema, SSE_REPLAY_BATCH_SIZE } from '@sentinel/shared';
 import { authPreHandler } from '../../auth/middleware.js';
 import { resolveActor, getProjectOrgId, getRunOrgId } from '../../lib/actor.js';
@@ -31,18 +31,23 @@ const RunSummaryShape = z.object({
   finishedAt: z.string().nullable(),
   durationMs: z.number().nullable(),
   createdAt: z.string(),
+  // Nullish, not just optional: routes that `include` the relation get an
+  // object, routes that only `select` scalars omit it entirely, and Prisma
+  // types the included relation as possibly null.
   environment: z.object({
     id: z.string(),
     name: z.string(),
     baseUrl: z.string(),
     isDefault: z.boolean(),
-  }).optional(),
+  }).nullish(),
 });
 
 function serializeRun(r: {
   id: string;
   projectId: string;
-  environmentId?: string;
+  // Non-nullable in the schema (Run always belongs to an Environment), and
+  // RunSummaryShape requires it — so it must not be optional here.
+  environmentId: string;
   suiteId?: string | null;
   status: string;
   trigger: string;
@@ -185,7 +190,7 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
           testCaseId: string;
           testVersionId: string;
           shardIndex: number;
-          browser: string;
+          browser: Browser;
           projectLabel: string;
         }[] = [];
 
@@ -607,8 +612,12 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
       if (!actor) return;
 
       const runId = req.params.id;
-      const lastEventId = req.headers['last-event-id'];
-      const resumeAfterSeq = lastEventId ? parseInt(lastEventId, 10) : -1;
+      // A repeated header arrives as an array; SSE only ever sends one, so take
+      // the first value.
+      const lastEventIdHeader = req.headers['last-event-id'];
+      const lastEventId = Array.isArray(lastEventIdHeader) ? lastEventIdHeader[0] : lastEventIdHeader;
+      const parsedSeq = lastEventId ? parseInt(lastEventId, 10) : NaN;
+      const resumeAfterSeq = Number.isFinite(parsedSeq) ? parsedSeq : -1;
 
       // Hijack the connection for raw SSE
       reply.hijack();

@@ -7,7 +7,8 @@
   },
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0"
   },
   "peerDependencies": {
     "react": "^19.0.0",
@@ -21,6 +22,7 @@
   "devDependencies": {
     "@sentinel/config": "workspace:*",
     "@types/react": "^19.0.2",
+    "eslint": "^9.17.0",
     "typescript": "^5.7.2"
   }
 }

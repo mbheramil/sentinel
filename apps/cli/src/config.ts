@@ -8,9 +8,11 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+// Type-only: erased at compile time, so `conf` is still loaded lazily below and
+// costs nothing at startup.
+import type Conf from 'conf';
 
-// Lazy-load conf to avoid startup cost when not needed
-let _conf: import('conf').default<SentinelConf> | null = null;
+let _conf: Conf<SentinelConf> | null = null;
 
 interface SentinelConf {
   apiUrl?: string;
@@ -26,7 +28,7 @@ const CONFIG_FILE = 'sentinel.config.json';
 const KEYTAR_SERVICE = 'sentinel-cli';
 const KEYTAR_ACCOUNT = 'token';
 
-async function getConf(): Promise<import('conf').default<SentinelConf>> {
+async function getConf(): Promise<Conf<SentinelConf>> {
   if (!_conf) {
     const { default: Conf } = await import('conf');
     _conf = new Conf<SentinelConf>({ projectName: 'sentinel-cli' });

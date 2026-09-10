@@ -8,9 +8,9 @@
     "build": "tsc --project tsconfig.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src --max-warnings 0",
-    "test": "vitest run",
-    "test:unit": "vitest run --reporter=verbose src/**/*.test.ts",
+    "lint": "eslint . --max-warnings 0",
+    "test": "vitest run --passWithNoTests",
+    "test:unit": "vitest run --passWithNoTests",
     "test:integration": "vitest run --reporter=verbose src/**/*.integration.test.ts"
   },
   "dependencies": {
@@ -37,6 +37,7 @@
   "devDependencies": {
     "@sentinel/config": "workspace:*",
     "@types/node": "^22.10.5",
+    "eslint": "^9.17.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

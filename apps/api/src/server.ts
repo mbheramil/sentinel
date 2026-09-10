@@ -1,7 +1,8 @@
-import Fastify from 'fastify';
+import Fastify, { type FastifyError } from 'fastify';
 import { serializerCompiler, validatorCompiler, jsonSchemaTransform } from 'fastify-type-provider-zod';
 import fastifyCors from '@fastify/cors';
 import fastifyHelmet from '@fastify/helmet';
+import fastifyRateLimit from '@fastify/rate-limit';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
 import { config } from './config.js';
@@ -39,6 +40,11 @@ export async function buildServer() {
   await app.register(fastifyHelmet, {
     contentSecurityPolicy: config.NODE_ENV === 'production',
   });
+
+  // Rate limiting. `global: false` so only routes that declare
+  // `config.rateLimit` are limited — currently the public capture webhook,
+  // which is unauthenticated and therefore the one route that needs it.
+  await app.register(fastifyRateLimit, { global: false });
 
   // CORS
   await app.register(fastifyCors, {
@@ -98,7 +104,9 @@ export async function buildServer() {
   await app.register(internalRoutes, { prefix: '/internal' });
 
   // ── Global error handler ────────────────────────────────────────────────
-  app.setErrorHandler((error, _req, reply) => {
+  // Explicit FastifyError annotation: with the Zod type provider installed the
+  // handler's `error` parameter otherwise widens to `unknown`.
+  app.setErrorHandler((error: FastifyError, _req, reply) => {
     const statusCode = error.statusCode ?? 500;
     if (statusCode >= 500) {
       app.log.error({ err: error }, 'Unhandled error');

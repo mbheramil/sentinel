@@ -1,5 +1,6 @@
 import { spawn } from 'child_process';
-import Redis from 'ioredis';
+import type { Logger } from 'pino';
+import { Redis } from 'ioredis';
 import type { ChildProcess } from 'child_process';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
@@ -36,7 +37,7 @@ async function watchCancel(
 
 // ── Kill helpers ─────────────────────────────────────────────────────────────
 
-function killProcess(proc: ChildProcess, runLog: ReturnType<typeof logger.child>): void {
+function killProcess(proc: ChildProcess, runLog: Logger): void {
   try {
     proc.kill('SIGTERM');
     setTimeout(() => {
@@ -53,7 +54,7 @@ function killProcess(proc: ChildProcess, runLog: ReturnType<typeof logger.child>
 
 function killContainer(
   containerId: string,
-  runLog: ReturnType<typeof logger.child>,
+  runLog: Logger,
 ): void {
   const stop = spawn('docker', ['stop', '--time', '10', containerId], {
     stdio: 'ignore',

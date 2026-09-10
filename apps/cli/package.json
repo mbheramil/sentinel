@@ -2,11 +2,15 @@
   "name": "@sentinel/cli",
   "version": "0.1.0",
   "private": false,
-  "bin": { "sentinel": "./dist/index.js" },
+  "bin": {
+    "sentinel": "./dist/index.js"
+  },
   "type": "module",
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "dev": "echo CLI ready - use: node dist/index.js"
+    "typecheck": "tsc --noEmit",
+    "dev": "echo CLI ready - use: node dist/index.js",
+    "lint": "eslint . --max-warnings 0"
   },
   "dependencies": {
     "@sentinel/shared": "workspace:*",
@@ -21,6 +25,7 @@
   "devDependencies": {
     "@sentinel/config": "workspace:*",
     "@types/node": "^22.10.5",
+    "eslint": "^9.17.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

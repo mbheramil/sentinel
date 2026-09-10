@@ -9,7 +9,6 @@ import {
   AlertTriangleIcon,
   CodeIcon,
 } from 'lucide-react';
-// @ts-ignore
 import type { editor as MonacoEditor, MarkerSeverity } from 'monaco-editor';
 import { apiClient, SentinelApiError, type CompileWarning } from '@/lib/api-client';
 import type { StepIr } from './ir-types';

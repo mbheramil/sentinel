@@ -22,7 +22,16 @@ export const baseConfig = [
     rules: {
       ...tseslint.configs['recommended'].rules,
       '@typescript-eslint/no-explicit-any': 'error',
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          // `const { secret: _omit, ...rest } = body` is the idiomatic way to
+          // drop a key; the discarded binding is the point, not a mistake.
+          ignoreRestSiblings: true,
+        },
+      ],
       '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports' }],
       'no-console': ['error', { allow: ['warn', 'error'] }],
     },

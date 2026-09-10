@@ -52,9 +52,6 @@ const NETWORK_IS_OPTIONS = [
   { value: 'noStatusAtOrAbove', label: 'No status >= threshold' },
 ] as const;
 
-const ELEMENT_STATE_IS = new Set([
-  'visible', 'hidden', 'enabled', 'disabled', 'checked', 'editable', 'focused',
-]);
 const ELEMENT_VALUE_IS = new Set([
   'text', 'containsText', 'value', 'attribute', 'class', 'count',
 ]);

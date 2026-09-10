@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "steps": [
+    {
+      "kind": "apiRequest",
+      "method": "post",
+      "url": "/api/jobs",
+      "body": { "kind": "export" },
+      "saveAs": "created"
+    },
+    {
+      "kind": "expect",
+      "assertion": {
+        "on": "response",
+        "is": "status",
+        "expected": { "literal": "201" }
+      }
+    },
+    {
+      "kind": "expect",
+      "assertion": {
+        "on": "response",
+        "is": "jsonPath",
+        "expected": { "literal": "queued" }
+      }
+    },
+    {
+      "kind": "pollApi",
+      "method": "get",
+      "url": "/api/jobs/latest",
+      "timeoutMs": 30000,
+      "intervalMs": 500,
+      "until": {
+        "on": "response",
+        "is": "status",
+        "expected": { "literal": "204" }
+      }
+    },
+    {
+      "kind": "expect",
+      "assertion": {
+        "on": { "by": "testId", "value": "job-row" },
+        "is": "count",
+        "expected": { "literal": "3" }
+      }
+    }
+  ]
+}

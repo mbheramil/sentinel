@@ -143,12 +143,36 @@ function compileValue(v: ValueRef): string {
   return `'/* unknown value */'`;
 }
 
+/**
+ * Compile a ValueRef for a comparison whose subject is a number — a response
+ * status, or an element count.
+ *
+ * `ValueRef.literal` is always a string and `compileValue` quotes it, so routing
+ * those through `compileValue` emitted `toBe('204')`, which can never match the
+ * number `response.status()` returns. Numeric literals are emitted bare; anything
+ * dynamic (a var, a run token) is coerced at runtime, since its value isn't
+ * known here.
+ */
+function compileNumericValue(v: ValueRef): string {
+  if ('literal' in v) {
+    const n = Number(v.literal);
+    if (v.literal.trim() !== '' && Number.isFinite(n)) return String(n);
+  }
+  return `Number(${compileValue(v)})`;
+}
+
 // ── Assertion compilation ─────────────────────────────────────────────────────
 
 function compileAssertion(
   a: Assertion,
   warnings: CompileWarning[],
   stepIndex: number,
+  /**
+   * Name of the in-scope variable holding the response an `on: 'response'`
+   * assertion should read — the most recent request step's binding, or `null` if
+   * no request has run yet in this scope.
+   */
+  responseVar: string | null,
 ): string {
   const not = 'not' in a && a.not ? '.not' : '';
 
@@ -163,16 +187,30 @@ function compileAssertion(
   }
 
   if (a.on === 'response') {
+    // Previously these emitted a bare `capturedRes`, which nothing in the
+    // generated file ever declared — the test died with a ReferenceError instead
+    // of asserting. Bind to the request step that actually produced a response,
+    // and refuse to emit anything if there isn't one.
+    if (responseVar === null) {
+      warnings.push({
+        stepIndex,
+        message:
+          'response assertion has no response in scope — it must follow an apiRequest, ' +
+          'or a goto with expectStatus, in the same step group; assertion skipped',
+        severity: 'warn',
+      });
+      return `// skipped: response assertion with no request in scope`;
+    }
     const val = compileValue(a.expected);
     switch (a.is) {
       case 'status':
-        return `expect(capturedRes.status())${not}.toBe(${val});`;
+        return `expect(${responseVar}.status())${not}.toBe(${compileNumericValue(a.expected)});`;
       case 'ok':
-        return `expect(capturedRes.ok())${not}.toBe(true);`;
+        return `expect(${responseVar}.ok())${not}.toBe(true);`;
       case 'header':
-        return `expect(capturedRes.headers()[${esc(a.header ?? '')}])${not}.toBe(${val});`;
+        return `expect(${responseVar}.headers()[${esc(a.header ?? '')}])${not}.toBe(${val});`;
       case 'jsonPath':
-        return `expect(await capturedRes.json())${not}.toMatchObject(${val});`;
+        return `expect(await ${responseVar}.json())${not}.toMatchObject(${val});`;
     }
   }
 
@@ -239,7 +277,7 @@ function compileAssertion(
         return `await expect(${loc})${not}.toHaveClass(${val});`;
       }
       case 'count': {
-        const val = compileValue((a as { expected: ValueRef }).expected);
+        const val = compileNumericValue((a as { expected: ValueRef }).expected);
         return `await expect(${loc})${not}.toHaveCount(${val});`;
       }
       case 'screenshotMatches': {
@@ -257,15 +295,30 @@ function compileAssertion(
 
 // ── Step compilation ──────────────────────────────────────────────────────────
 
+/**
+ * Tracks the variable holding the most recent response, so a following
+ * `on: 'response'` assertion has something real to read.
+ *
+ * Mutable and shared across the step loop because it is sequential state: each
+ * request step overwrites it. Groups compile into a `test.step` callback, so a
+ * binding made inside one goes out of scope at its end — `compileStep` restores
+ * the previous value after a group for exactly that reason.
+ */
+interface ResponseScope {
+  lastVar: string | null;
+}
+
 function compileStep(
   step: Step,
   stepIndex: number,
   warnings: CompileWarning[],
+  resp: ResponseScope,
   indent = '  ',
 ): string {
   switch (step.kind) {
     case 'goto': {
       if (step.expectStatus !== undefined) {
+        resp.lastVar = `_res${stepIndex}!`;
         return (
           `${indent}const _res${stepIndex} = await page.goto(${esc(step.url)}` +
           (step.waitUntil ? `, { waitUntil: ${esc(step.waitUntil)} }` : '') +
@@ -343,7 +396,7 @@ function compileStep(
     }
 
     case 'expect': {
-      const assertCode = compileAssertion(step.assertion, warnings, stepIndex);
+      const assertCode = compileAssertion(step.assertion, warnings, stepIndex, resp.lastVar);
       return `${indent}${assertCode}`;
     }
 
@@ -358,6 +411,7 @@ function compileStep(
       const urlStr = esc(step.url);
       const bodyStr = step.body !== undefined ? `, data: ${JSON.stringify(step.body)}` : '';
       const varName = step.saveAs ?? `_apiResp${stepIndex}`;
+      resp.lastVar = varName;
       return `${indent}const ${varName} = await page.request.fetch(${urlStr}, { method: ${methodStr}${bodyStr} });`;
     }
 
@@ -365,16 +419,24 @@ function compileStep(
       const methodStr = esc(step.method.toUpperCase());
       const urlStr = esc(step.url);
       const timeoutOpt = step.timeoutMs !== undefined ? `, { timeout: ${step.timeoutMs}, intervals: [${step.intervalMs ?? 1000}] }` : '';
-      // Compile the until assertion inline — it references `r` as the response
-      const assertCode = compileAssertion(step.until, warnings, stepIndex)
-        .replace(/capturedRes/g, 'r')
-        .trim()
-        .replace(/;$/, '');
+      // Compile the until assertion inline, bound to the response the poll
+      // callback fetches on each iteration.
+      const untilCode = compileAssertion(step.until, warnings, stepIndex, 'r').trim();
       return (
+        // expect.poll needs a callback returning a value to match on, but an
+        // assertion reports failure by throwing — so the callback runs `until`
+        // and reports whether it held, and the poll retries until it does.
+        // Without this the step polled for a bare 200 and silently ignored
+        // whatever the test actually asked it to wait for.
         `${indent}await expect.poll(async () => {\n` +
         `${indent}  const r = await page.request.fetch(${urlStr}, { method: ${methodStr} });\n` +
-        `${indent}  return r.status();\n` +
-        `${indent}}${timeoutOpt}).toBe(200);`
+        `${indent}  try {\n` +
+        `${indent}    ${untilCode}\n` +
+        `${indent}    return true;\n` +
+        `${indent}  } catch {\n` +
+        `${indent}    return false;\n` +
+        `${indent}  }\n` +
+        `${indent}}${timeoutOpt}).toBe(true);`
       );
     }
 
@@ -400,9 +462,13 @@ function compileStep(
     }
 
     case 'group': {
+      const outerResponseVar = resp.lastVar;
       const inner = step.steps
-        .map((s, i) => compileStep(s, stepIndex * 1000 + i, warnings, indent + '  '))
+        .map((s, i) => compileStep(s, stepIndex * 1000 + i, warnings, resp, indent + '  '))
         .join('\n');
+      // Anything the group bound lives inside the `test.step` callback and is out
+      // of scope from here on.
+      resp.lastVar = outerResponseVar;
       return (
         `${indent}await test.step(${esc(step.title)}, async () => {\n` +
         `${inner}\n` +
@@ -447,7 +513,9 @@ const FILE_FOOTER = `});`;
 export async function compile(ir: StepIr): Promise<CompileResult> {
   const warnings: CompileWarning[] = [];
 
-  const stepLines = ir.steps.map((step, idx) => compileStep(step, idx, warnings)).join('\n');
+  const resp: ResponseScope = { lastVar: null };
+
+  const stepLines = ir.steps.map((step, idx) => compileStep(step, idx, warnings, resp)).join('\n');
 
   const rawCode = `${FILE_HEADER}\n${stepLines}\n${FILE_FOOTER}\n`;
 

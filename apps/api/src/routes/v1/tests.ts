@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { prisma } from '@sentinel/db';
+import { prisma, Prisma } from '@sentinel/db';
 import {
   ERROR_CODES,
   CreateTestCaseSchema,
@@ -243,7 +243,11 @@ export async function testRoutes(app: FastifyInstance): Promise<void> {
           ...(req.body.description !== undefined ? { description: req.body.description } : {}),
           ...(req.body.filePath !== undefined ? { filePath: req.body.filePath } : {}),
           ...(req.body.code !== undefined ? { code: req.body.code } : {}),
-          ...(req.body.stepsIr !== undefined ? { stepsIr: req.body.stepsIr } : {}),
+          // `stepsIr` is a nullable Json column: clearing it needs Prisma.DbNull,
+          // not a bare `null` (which Prisma reads as "no change").
+          ...(req.body.stepsIr !== undefined
+            ? { stepsIr: req.body.stepsIr === null ? Prisma.DbNull : (req.body.stepsIr as Prisma.InputJsonValue) }
+            : {}),
           ...(req.body.authoringMode !== undefined ? { authoringMode: req.body.authoringMode } : {}),
           ...(req.body.tags !== undefined ? { tags: req.body.tags } : {}),
           ...(req.body.isMuted !== undefined ? { isMuted: req.body.isMuted } : {}),
