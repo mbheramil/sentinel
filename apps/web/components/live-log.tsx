@@ -19,10 +19,41 @@ interface LogLine {
   level?: 'info' | 'error' | 'warn';
 }
 
+function formatEvent(type: string, p: Record<string, unknown>): string {
+  switch (type) {
+    case 'run.begin':
+      return `▶  Run started — ${p['totalTests']} test${Number(p['totalTests']) === 1 ? '' : 's'}, ${p['workers']} worker (Playwright ${p['playwrightVersion']})`;
+    case 'run.end':
+      return `■  Run finished — ${p['status']}  (${p['durationMs']}ms)`;
+    case 'test.begin':
+      return `  ○ ${p['title'] ?? p['testId']}  [${p['projectLabel']}]${Number(p['attemptIndex']) > 0 ? `  retry #${p['attemptIndex']}` : ''}`;
+    case 'test.end': {
+      const ok = p['status'] === 'passed';
+      const icon = ok ? '  ✓' : p['status'] === 'skipped' ? '  -' : '  ✗';
+      const err = p['error'] ? `\n      ${(p['error'] as Record<string, unknown>)['message'] ?? p['error']}` : '';
+      return `${icon} ${p['title'] ?? p['testId']}  (${p['durationMs']}ms)${err}`;
+    }
+    case 'step.begin':
+      return `    → ${p['title']}`;
+    case 'step.end': {
+      if (p['status'] === 'failed' && p['error']) {
+        return `    ✗ ${p['title']}  — ${p['error']}`;
+      }
+      return `    ✓ ${p['title']}  (${p['durationMs']}ms)`;
+    }
+    case 'test.stdout':
+      return `    [stdout] ${String(p['chunk'] ?? '').trim()}`;
+    case 'test.stderr':
+      return `    [stderr] ${String(p['chunk'] ?? '').trim()}`;
+    default:
+      return `[${type}]`;
+  }
+}
+
 function parseLogLevel(text: string): LogLine['level'] {
-  const lower = text.toLowerCase();
-  if (lower.includes('error') || lower.includes('fail')) return 'error';
-  if (lower.includes('warn')) return 'warn';
+  if (text.startsWith('  ✗') || text.includes('[stderr]') || text.includes('error')) return 'error';
+  if (text.startsWith('  ✓') || text.startsWith('▶') || text.startsWith('■')) return 'info';
+  if (text.includes('[stdout]')) return 'warn';
   return 'info';
 }
 
@@ -76,9 +107,12 @@ export function LiveLog({ runId, className }: LiveLogProps) {
 
     es.addEventListener('message', (e: MessageEvent<string>) => {
       try {
-        const evt = JSON.parse(e.data) as { type: string; ts: string; payload?: Record<string, unknown> };
-        const text = `[${evt.type}] ${evt.payload ? JSON.stringify(evt.payload) : ''}`;
-        appendLine(text, evt.ts ?? new Date().toISOString());
+        const evt = JSON.parse(e.data) as {
+          type: string;
+          ts: string;
+          payload?: Record<string, unknown>;
+        };
+        appendLine(formatEvent(evt.type, evt.payload ?? {}), evt.ts ?? new Date().toISOString());
       } catch {
         appendLine(e.data, new Date().toISOString());
       }
