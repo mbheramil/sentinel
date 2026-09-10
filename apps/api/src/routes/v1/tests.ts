@@ -171,17 +171,37 @@ export async function testRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      const test = await prisma.testCase.create({
-        data: {
-          projectId: req.params.id,
-          name: req.body.name,
-          description: req.body.description,
-          filePath: req.body.filePath,
-          code: req.body.code,
-          stepsIr: req.body.stepsIr ?? undefined,
-          authoringMode: req.body.authoringMode,
-          tags: req.body.tags,
-        },
+      // Create the test case and its initial version in one transaction so
+      // currentVersionId is set immediately. Without a version the runner skips
+      // the test (it filters to currentVersionId != null) and Quick Run reports
+      // 0 tests.
+      const test = await prisma.$transaction(async (tx) => {
+        const tc = await tx.testCase.create({
+          data: {
+            projectId: req.params.id,
+            name: req.body.name,
+            description: req.body.description,
+            filePath: req.body.filePath,
+            code: req.body.code,
+            stepsIr: req.body.stepsIr ?? undefined,
+            authoringMode: req.body.authoringMode,
+            tags: req.body.tags,
+          },
+        });
+
+        const version = await tx.testVersion.create({
+          data: {
+            testCaseId: tc.id,
+            version: 1,
+            code: req.body.code,
+            message: 'Initial version',
+          },
+        });
+
+        return tx.testCase.update({
+          where: { id: tc.id },
+          data: { currentVersionId: version.id },
+        });
       });
 
       return reply.status(201).send(serializeTest(test));
