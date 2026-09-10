@@ -354,17 +354,37 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(404).send({ error: { code: ERROR_CODES.NOT_FOUND, message: 'Shard not found' } });
       }
 
-      // Update individual test statuses
+      // Update individual test statuses and create one Attempt record per result
+      // so the UI can show pass/fail, duration, and navigate to the attempt detail.
       await Promise.all(
-        req.body.testResults.map((tr) =>
-          prisma.runTest.update({
-            where: { id: tr.runTestId },
-            data: {
-              status: tr.status as TestStatus,
-              durationMs: tr.durationMs,
-            },
-          }).catch(() => {}), // ignore if runTest not found (defensive)
-        ),
+        req.body.testResults.map(async (tr) => {
+          try {
+            await prisma.runTest.update({
+              where: { id: tr.runTestId },
+              data: {
+                status: tr.status as TestStatus,
+                durationMs: tr.durationMs,
+              },
+            });
+            // Create an attempt if none exists yet (idempotent — index field keeps it unique)
+            const existing = await prisma.attempt.findFirst({
+              where: { runTestId: tr.runTestId },
+              select: { id: true },
+            });
+            if (!existing) {
+              await prisma.attempt.create({
+                data: {
+                  runTestId: tr.runTestId,
+                  index: 0,
+                  status: tr.status as TestStatus,
+                  durationMs: tr.durationMs,
+                },
+              });
+            }
+          } catch {
+            // defensive — ignore individual failures
+          }
+        }),
       );
 
       // Mark shard as complete
