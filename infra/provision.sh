@@ -249,7 +249,22 @@ chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 # ─────────────────────────────────────────────────────────────────────────────
 log "11/12  Install, migrate, build"
 cd "$APP_DIR"
-pnpm install --frozen-lockfile 2>&1 | tail -3
+# pnpm install on a fresh box answers its own "remove modules dir?" prompt with
+# yes automatically. On a re-run it asks interactively — pipe yes to it.
+yes | pnpm install --frozen-lockfile 2>&1 | tail -3
+
+# .npmrc marks @prisma/client for hoisting to the workspace root, but pnpm's
+# `yes` answer above may skip the modules-rebuild that applies new hoist rules.
+# Create the symlink explicitly so the Next.js server build (which externalises
+# @prisma/client via serverExternalPackages) can find it at runtime.
+if [[ ! -e "$APP_DIR/node_modules/@prisma/client" ]]; then
+  PRISMA_STORE="$APP_DIR/node_modules/.pnpm/@prisma+client@"*"/node_modules/@prisma/client"
+  # shellcheck disable=SC2086
+  mkdir -p "$APP_DIR/node_modules/@prisma"
+  # shellcheck disable=SC2086
+  ln -sfn "$PRISMA_STORE" "$APP_DIR/node_modules/@prisma/client" 2>/dev/null || \
+    warn "@prisma/client symlink failed — login may not work"
+fi
 pnpm --filter @sentinel/shared build 2>&1 | tail -2
 pnpm --filter @sentinel/ir build     2>&1 | tail -2
 pnpm --filter @sentinel/db exec prisma generate 2>&1 | tail -2
