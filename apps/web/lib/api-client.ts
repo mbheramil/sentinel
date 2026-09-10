@@ -362,6 +362,10 @@ export const apiClient = {
     });
   },
 
+  deleteProject(slug: string): Promise<void> {
+    return request<void>(`/projects/${slug}`, { method: 'DELETE' });
+  },
+
   // Environments
   getEnvironments(projectSlug: string): Promise<EnvironmentResponse[]> {
     return request<EnvironmentResponse[]>(`/projects/${projectSlug}/environments`);

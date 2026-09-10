@@ -55,8 +55,8 @@ const TAB_LINKS = [
   { href: 'runs', label: 'Runs', icon: ListIcon },
   { href: 'environments', label: 'Environments', icon: ServerIcon },
   { href: 'insights', label: 'Insights', icon: TrendingUpIcon },
-  { href: 'schedules', label: 'Schedules', icon: CalendarIcon, disabled: true },
-  { href: 'settings', label: 'Settings', icon: SettingsIcon, disabled: true },
+  { href: 'schedules', label: 'Schedules', icon: CalendarIcon },
+  { href: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
 
 export default function ProjectPage({ params }: Props) {
