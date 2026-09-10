@@ -258,6 +258,11 @@ pnpm --filter @sentinel/db exec tsx prisma/seed.ts 2>&1 | tail -3 || warn "Seed 
 # Cap the heap so a build can never OOM-kill Postgres/Redis out from under us.
 NODE_OPTIONS='--max-old-space-size=1400' pnpm --filter @sentinel/web build 2>&1 | tail -6
 
+# Everything above ran as root, so node_modules/ and .next/ are root-owned even
+# though we chowned the tree in step 10. The apps run as $APP_USER (step 12) and
+# Next writes into .next/ at runtime, so hand the tree back.
+chown -R "$APP_USER:$APP_USER" "$APP_DIR"
+
 # ─────────────────────────────────────────────────────────────────────────────
 log "12/12  Nginx reverse proxy + PM2"
 cat > /etc/nginx/sites-available/sentinel <<'EOF'
@@ -328,10 +333,26 @@ module.exports = {
 EOF
 chown "$APP_USER:$APP_USER" "$APP_DIR/ecosystem.config.cjs"
 
+# Run the apps as $APP_USER, not root. This script's header promises that, but pm2
+# was being driven as root, so a compromise of the web app owned the whole box —
+# which is exactly how the previous droplet was lost. pm2 keeps its daemon and
+# process list per-user, so this needs the root daemon torn down as well as the
+# unprivileged one started, or both would run and fight over the ports.
+APP_HOME="$(getent passwd "$APP_USER" | cut -d: -f6)"
+as_app() { sudo -u "$APP_USER" env HOME="$APP_HOME" PATH="$PATH" "$@"; }
+
 pm2 delete all >/dev/null 2>&1 || true
-pm2 start "$APP_DIR/ecosystem.config.cjs"
-pm2 save >/dev/null
-pm2 startup systemd -u root --hp /root >/dev/null 2>&1 || true
+pm2 kill     >/dev/null 2>&1 || true
+systemctl disable --now pm2-root >/dev/null 2>&1 || true
+
+as_app pm2 delete all >/dev/null 2>&1 || true
+as_app pm2 start "$APP_DIR/ecosystem.config.cjs"
+as_app pm2 save >/dev/null
+# Generates and enables the systemd unit that resurrects $APP_USER's process list
+# on boot. Must run as root (it writes to /etc/systemd/system) but targets the app
+# user via -u/--hp.
+pm2 startup systemd -u "$APP_USER" --hp "$APP_HOME" >/dev/null 2>&1 || true
+systemctl enable "pm2-$APP_USER" >/dev/null 2>&1 || true
 
 log "Verification"
 # Poll rather than sleeping a fixed 10s and hoping: Next takes a while to be ready
@@ -352,13 +373,21 @@ VERIFY_FAILED=0
 check 'api   /healthz' http://127.0.0.1:3001/healthz || VERIFY_FAILED=1
 check 'web   /login'   http://127.0.0.1:3000/login   || VERIFY_FAILED=1
 check 'nginx /login'   http://127.0.0.1/login        || VERIFY_FAILED=1
-pm2 list
+# `pm2 list` as root would show root's (now deliberately empty) daemon, not ours.
+as_app pm2 list
+
+# The apps must not be running as root — that is the whole point of step 12, and a
+# silent regression here is invisible until the box is compromised.
+if as_app pm2 jlist 2>/dev/null | grep -q '"username":"root"'; then
+  VERIFY_FAILED=1
+  warn "An app is running as root — expected ${APP_USER}."
+fi
 
 # Previously this script printed "provisioned and hardened" unconditionally, so a
 # run where both apps were crash-looping still looked like a success.
 if (( VERIFY_FAILED )); then
   echo
-  pm2 logs --nostream --lines 40 2>/dev/null || true
+  as_app pm2 logs --nostream --lines 40 2>/dev/null || true
   die "Provisioning completed but the app is NOT serving — see the logs above, and 'pm2 logs'."
 fi
 
@@ -373,12 +402,13 @@ cat <<EOF
 
   Public ports  22 (rate-limited), 80, 443  — everything else is localhost-only
   Secrets       generated on this box, stored in ${APP_DIR}/.env (chmod 600)
+  Runs as       ${APP_USER} (unprivileged) — pm2 is per-user, so use sudo -u below
 
   Next steps
     1. Change the seeded demo password immediately.
     2. Point a domain at this IP, then: certbot --nginx -d your.domain
        (HTTP-only means session cookies travel in clear text.)
-    3. Check status:  pm2 list && pm2 logs
+    3. Check status:  sudo -u ${APP_USER} pm2 list && sudo -u ${APP_USER} pm2 logs
     4. Verify hardening:  ufw status verbose && ss -tlnp | grep -v 127.0.0.1
 
 EOF
