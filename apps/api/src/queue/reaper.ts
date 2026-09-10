@@ -30,7 +30,7 @@ async function reapOrphanedShards(): Promise<void> {
 
     if (shard.attemptCount < 2) {
       try {
-        await enqueueRun(shard.runId, shard.index, shard.total, shard.run.projectId);
+        await enqueueRun(shard.runId, shard.id, shard.index, shard.total, shard.run.projectId);
         // Reset the shard so the runner can claim it again
         await prisma.runShard.update({
           where: { id: shard.id },

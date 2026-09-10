@@ -73,12 +73,20 @@ export default function ProjectPage({ params }: Props) {
     queryFn: () => apiClient.getEnvironments(slug),
   });
 
+  const { data: tests } = useQuery({
+    queryKey: ['tests', slug],
+    queryFn: () => apiClient.getTests(slug),
+    enabled: !!project,
+  });
+
   const runMutation = useMutation({
     mutationFn: () => {
       const envId = environments?.[0]?.id ?? '';
+      const testCaseIds = (tests ?? []).map((t) => t.id);
       return apiClient.createRun(slug, {
         environmentId: envId,
         browsers: project?.defaultBrowsers ?? ['CHROMIUM'],
+        testCaseIds,
       });
     },
     onSuccess: (result) => {
@@ -128,8 +136,8 @@ export default function ProjectPage({ params }: Props) {
         </div>
         <Button
           onClick={() => runMutation.mutate()}
-          disabled={runMutation.isPending || !environments?.length}
-          title={!environments?.length ? 'Add an environment first' : undefined}
+          disabled={runMutation.isPending || !environments?.length || !tests?.length}
+          title={!environments?.length ? 'Add an environment first' : !tests?.length ? 'Add a test first' : undefined}
         >
           {runMutation.isPending ? (
             <Loader2Icon className="h-4 w-4 animate-spin" aria-hidden="true" />

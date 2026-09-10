@@ -68,16 +68,17 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
         response: {
           200: z.object({
             runId: z.string(),
+            shortId: z.string(),
+            shardId: z.string(),
             shardIndex: z.number(),
             shardTotal: z.number(),
             browsers: z.array(z.string()),
             traceMode: z.string(),
+            workers: z.number(),
             environment: z.object({
-              id: z.string(),
               baseUrl: z.string(),
-              variables: z.record(z.string()),
+              vars: z.record(z.string()),
               secrets: z.record(z.string()),
-              httpCredentials: z.unknown().nullable(),
             }),
             tests: z.array(
               z.object({
@@ -157,16 +158,17 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
 
       return reply.status(200).send({
         runId: shard.runId,
+        shortId: shard.runId.slice(-8),
+        shardId: shard.id,
         shardIndex: shard.index,
         shardTotal: shard.total,
         browsers: shard.run.browsers,
         traceMode: shard.run.traceMode,
+        workers: 1,
         environment: {
-          id: env.id,
           baseUrl: env.baseUrl,
-          variables: (env.variables ?? {}) as Record<string, string>,
+          vars: (env.variables ?? {}) as Record<string, string>,
           secrets,
-          httpCredentials: env.httpCredentials ?? null,
         },
         tests: shardTests.map((rt) => ({
           runTestId: rt.id,

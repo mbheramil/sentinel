@@ -774,7 +774,7 @@ export async function phase3Routes(app: FastifyInstance): Promise<void> {
           select: { id: true },
         });
 
-        await tx.runShard.create({ data: { runId: r.id, index: 0, total: 1 } });
+        const shard0 = await tx.runShard.create({ data: { runId: r.id, index: 0, total: 1 }, select: { id: true } });
 
         const runTestData: {
           runId: string;
@@ -801,13 +801,13 @@ export async function phase3Routes(app: FastifyInstance): Promise<void> {
         }
 
         await tx.runTest.createMany({ data: runTestData });
-        return r;
+        return { run: r, shardId: shard0.id };
       });
 
-      await enqueueRun(run.id, 0, 1, schedule.projectId);
+      await enqueueRun(run.run.id, run.shardId, 0, 1, schedule.projectId);
       await prisma.schedule.update({ where: { id: req.params.id }, data: { lastRunAt: new Date() } });
 
-      return reply.status(201).send({ runId: run.id });
+      return reply.status(201).send({ runId: run.run.id });
     },
   );
 

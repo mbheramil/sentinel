@@ -5,6 +5,7 @@ import { logger } from '../logger.js';
 
 export interface RunJobPayload {
   runId: string;
+  shardId: string;
   shardIndex: number;
   shardTotal: number;
   projectId: string;
@@ -36,14 +37,15 @@ export function getQueue(): Queue<RunJobPayload> {
  */
 export async function enqueueRun(
   runId: string,
+  shardId: string,
   shardIndex: number,
   shardTotal: number,
   projectId: string,
 ): Promise<void> {
   const queue = getQueue();
   const jobId = `run_${runId}_shard_${shardIndex}`;
-  const payload: RunJobPayload = { runId, shardIndex, shardTotal, projectId, attempt: 1 };
+  const payload: RunJobPayload = { runId, shardId, shardIndex, shardTotal, projectId, attempt: 1 };
 
   await queue.add(jobId, payload, { jobId });
-  logger.info({ runId, shardIndex, shardTotal, projectId }, 'Enqueued run shard');
+  logger.info({ runId, shardId, shardIndex, shardTotal, projectId }, 'Enqueued run shard');
 }

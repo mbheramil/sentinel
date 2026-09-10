@@ -175,14 +175,15 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
           select: { id: true },
         });
 
-        // Create shards
-        await tx.runShard.createMany({
-          data: Array.from({ length: shardCount }, (_, i) => ({
-            runId: r.id,
-            index: i,
-            total: shardCount,
-          })),
-        });
+        // Create shards — createMany doesn't return IDs on all DBs, so create one by one
+        const shards = await Promise.all(
+          Array.from({ length: shardCount }, (_, i) =>
+            tx.runShard.create({
+              data: { runId: r.id, index: i, total: shardCount },
+              select: { id: true, index: true },
+            }),
+          ),
+        );
 
         // Create RunTest rows — one per (testCase × browser), round-robin shard assignment
         const runTestData: {
@@ -211,17 +212,17 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
         }
 
         await tx.runTest.createMany({ data: runTestData });
-        return r;
+        return { run: r, shards };
       });
 
-      // Enqueue shards in BullMQ
+      // Enqueue shards in BullMQ — include shard DB ID so the runner can claim it
       await Promise.all(
-        Array.from({ length: shardCount }, (_, i) =>
-          enqueueRun(run.id, i, shardCount, req.params.id),
+        run.shards.map((s) =>
+          enqueueRun(run.run.id, s.id, s.index, shardCount, req.params.id),
         ),
       );
 
-      return reply.status(201).send({ runId: run.id, status: 'QUEUED' });
+      return reply.status(201).send({ runId: run.run.id, status: 'QUEUED' });
     },
   );
 
@@ -629,13 +630,14 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
           select: { id: true },
         });
 
-        await tx.runShard.createMany({
-          data: Array.from({ length: original.shardCount }, (_, i) => ({
-            runId: r.id,
-            index: i,
-            total: original.shardCount,
-          })),
-        });
+        const retryShards = await Promise.all(
+          Array.from({ length: original.shardCount }, (_, i) =>
+            tx.runShard.create({
+              data: { runId: r.id, index: i, total: original.shardCount },
+              select: { id: true, index: true },
+            }),
+          ),
+        );
 
         await tx.runTest.createMany({
           data: testsToRetry.map((t) => ({
@@ -648,16 +650,16 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
           })),
         });
 
-        return r;
+        return { run: r, shards: retryShards };
       });
 
       await Promise.all(
-        Array.from({ length: original.shardCount }, (_, i) =>
-          enqueueRun(newRun.id, i, original.shardCount, original.projectId),
+        newRun.shards.map((s) =>
+          enqueueRun(newRun.run.id, s.id, s.index, original.shardCount, original.projectId),
         ),
       );
 
-      return reply.status(201).send({ runId: newRun.id, status: 'QUEUED' });
+      return reply.status(201).send({ runId: newRun.run.id, status: 'QUEUED' });
     },
   );
 

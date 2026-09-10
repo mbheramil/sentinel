@@ -55,6 +55,7 @@ export async function processJob(job: Job): Promise<void> {
     manifest = (await apiRequest(
       'POST',
       `/internal/shards/${shardId}/claim`,
+      { runnerId: config.RUNNER_ID },
     )) as ShardManifest;
   } catch (err) {
     jobLog.error({ err }, 'Failed to claim shard — aborting job');
@@ -70,10 +71,11 @@ export async function processJob(job: Job): Promise<void> {
     'Shard claimed',
   );
 
-  // 2. Start heartbeat
+  // 2. Start heartbeat — use shardId from the manifest (authoritative DB id)
+  const activeShardId = manifest.shardId;
   const heartbeat = setInterval(async () => {
     try {
-      await apiRequest('POST', `/internal/shards/${shardId}/heartbeat`);
+      await apiRequest('POST', `/internal/shards/${activeShardId}/heartbeat`);
     } catch (err) {
       jobLog.warn({ err }, 'Heartbeat failed');
     }
@@ -132,7 +134,7 @@ export async function processJob(job: Job): Promise<void> {
 
     // 9. Mark shard as complete
     try {
-      await apiRequest('PATCH', `/internal/shards/${shardId}/complete`, {
+      await apiRequest('PATCH', `/internal/shards/${activeShardId}/complete`, {
         status: finalStatus,
       });
       jobLog.info({ finalStatus }, 'Shard marked complete');

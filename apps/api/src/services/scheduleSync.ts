@@ -127,8 +127,9 @@ async function processScheduleJob(job: Job<ScheduleJobData>): Promise<void> {
       select: { id: true },
     });
 
-    await tx.runShard.create({
+    const shard0 = await tx.runShard.create({
       data: { runId: r.id, index: 0, total: 1 },
+      select: { id: true },
     });
 
     const runTestData: {
@@ -156,17 +157,17 @@ async function processScheduleJob(job: Job<ScheduleJobData>): Promise<void> {
     }
 
     await tx.runTest.createMany({ data: runTestData });
-    return r;
+    return { run: r, shardId: shard0.id };
   });
 
-  await enqueueRun(run.id, 0, 1, schedule.projectId);
+  await enqueueRun(run.run.id, run.shardId, 0, 1, schedule.projectId);
 
   await prisma.schedule.update({
     where: { id: scheduleId },
     data: { lastRunAt: new Date() },
   });
 
-  logger.info({ scheduleId, runId: run.id }, 'Schedule fired — run created');
+  logger.info({ scheduleId, runId: run.run.id }, 'Schedule fired — run created');
 }
 
 export function startScheduleWorker(): void {
