@@ -1,5 +1,5 @@
 import type { Job } from 'bullmq';
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, rmSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { config } from './config.js';
@@ -87,6 +87,7 @@ export async function processJob(job: Job): Promise<void> {
 
   let finalStatus: 'PASSED' | 'FAILED' | 'TIMED_OUT' | 'CANCELED' | 'ERROR' =
     'ERROR';
+  let testResults: Array<{ runTestId: string; status: string; durationMs?: number }> = [];
 
   try {
     // 4. Materialise workspace
@@ -120,6 +121,69 @@ export async function processJob(job: Job): Promise<void> {
     } catch (err) {
       jobLog.warn({ err }, 'Artifact collection/upload failed (non-fatal)');
     }
+
+    // 6b. Parse Playwright JSON report to build testResults for the complete call.
+    // The report is at {workDir}/results.json (written by the json reporter in the config).
+    // We match by filePath to find the RunTest ID, since Playwright uses its own
+    // internal test IDs that differ from ours.
+    testResults = [];
+    try {
+      const reportPath = join(workDir, 'results.json');
+      const reportRaw = readFileSync(reportPath, 'utf8');
+      const report = JSON.parse(reportRaw) as {
+        suites?: Array<{
+          file?: string;
+          specs?: Array<{
+            title: string;
+            tests?: Array<{
+              projectName?: string;
+              results?: Array<{ status: string; duration?: number; retry?: number }>;
+            }>;
+          }>;
+          suites?: unknown[];
+        }>;
+      };
+
+      // Build a map from filePath (relative) → runTestId
+      const fileToRunTestId = new Map<string, string>();
+      for (const t of manifest.tests) {
+        const rel = t.filePath.replace(/^specs\//, '');
+        fileToRunTestId.set(rel, t.runTestId);
+      }
+
+      type PwSuite = NonNullable<typeof report.suites>[number];
+      const flattenSuites = (suites: PwSuite[] | undefined): PwSuite[] => {
+        const out: PwSuite[] = [];
+        for (const s of suites ?? []) {
+          out.push(s);
+          if (s.suites?.length) out.push(...flattenSuites(s.suites as PwSuite[]));
+        }
+        return out;
+      };
+
+      for (const suite of flattenSuites(report.suites)) {
+        const file = (suite.file ?? '').replace(/^specs\//, '');
+        const runTestId = fileToRunTestId.get(file);
+        if (!runTestId) continue;
+        for (const spec of suite.specs ?? []) {
+          for (const t of spec.tests ?? []) {
+            const results = t.results ?? [];
+            const last = results[results.length - 1];
+            if (!last) continue;
+            const pwStatus = last.status;
+            const status =
+              pwStatus === 'passed' ? 'PASSED' :
+              pwStatus === 'failed' || pwStatus === 'timedOut' ? 'FAILED' :
+              pwStatus === 'skipped' ? 'SKIPPED' : 'FAILED';
+            testResults.push({ runTestId, status, durationMs: last.duration });
+          }
+        }
+      }
+      jobLog.info({ testResultCount: testResults.length }, 'Parsed test results from JSON report');
+    } catch (err) {
+      jobLog.warn({ err }, 'Failed to parse results.json — testResults will be empty');
+    }
+
   } finally {
     // 7. Stop heartbeat
     clearInterval(heartbeat);
@@ -136,6 +200,7 @@ export async function processJob(job: Job): Promise<void> {
     try {
       await apiRequest('PATCH', `/internal/shards/${activeShardId}/complete`, {
         status: finalStatus,
+        testResults,
       });
       jobLog.info({ finalStatus }, 'Shard marked complete');
     } catch (err) {

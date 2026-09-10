@@ -5,6 +5,8 @@
 export type Browser = 'CHROMIUM' | 'FIREFOX' | 'WEBKIT';
 
 export interface TestFile {
+  /** DB id of the RunTest row — used to report results back */
+  runTestId: string;
   /** DB id of the test case */
   testCaseId: string;
   /** Relative path inside specs/ dir, e.g. "login.spec.ts" */
