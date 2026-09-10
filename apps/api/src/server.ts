@@ -28,8 +28,7 @@ import { startRetentionReaper, startStatsReconciler } from './queue/reaper2.js';
 
 export async function buildServer() {
   const app = Fastify({
-    logger,
-    disableRequestLogging: false,
+    loggerInstance: logger,
   });
 
   // Type provider

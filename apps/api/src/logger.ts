@@ -5,19 +5,11 @@ export const logger = pino({
   level: config.LOG_LEVEL,
   redact: {
     paths: [
-      'secrets',
-      '*.secrets',
-      '*.*.secrets',
-      'storageState',
-      'httpCredentials',
-      '*.storageState',
-      '*.httpCredentials',
-      'req.headers.authorization',
-      'req.headers.cookie',
+      'secrets', '*.secrets', '*.*.secrets',
+      'storageState', 'httpCredentials',
+      '*.storageState', '*.httpCredentials',
+      'req.headers.authorization', 'req.headers.cookie',
     ],
     censor: '[REDACTED]',
   },
-  ...(config.NODE_ENV === 'development'
-    ? { transport: { target: 'pino-pretty', options: { colorize: true } } }
-    : {}),
 });
