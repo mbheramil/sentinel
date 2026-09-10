@@ -1,8 +1,9 @@
 'use client';
 
 import { use, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Loader2Icon,
   PlusIcon,
@@ -12,11 +13,14 @@ import {
   VideoIcon,
   WrenchIcon,
 } from 'lucide-react';
-import { apiClient, type TestCaseResponse } from '@/lib/api-client';
+import { apiClient, type TestCaseResponse, SentinelApiError } from '@/lib/api-client';
 import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import * as Dialog from '@radix-ui/react-dialog';
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -90,8 +94,101 @@ function TestRow({ test, slug }: { test: TestCaseResponse; slug: string }) {
   );
 }
 
+function toSlug(s: string) {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function NewTestModal({ slug, onClose }: { slug: string; onClose: () => void }) {
+  const qc = useQueryClient();
+  const router = useRouter();
+  const [name, setName] = useState('');
+  const [filePath, setFilePath] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [autoPath, setAutoPath] = useState(true);
+
+  function handleNameChange(v: string) {
+    setName(v);
+    if (autoPath) setFilePath(toSlug(v) + '.spec.ts');
+  }
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      apiClient.createTest(slug, {
+        name,
+        filePath,
+        code: `import { test, expect } from '../fixtures/sentinel';
+
+test('${name}', async ({ page }) => {
+  await page.goto('/');
+  await expect(page).toHaveTitle(/.+/);
+  // TODO: add your assertions here
+});
+`,
+      }),
+    onSuccess: (t) => {
+      void qc.invalidateQueries({ queryKey: ['tests', slug] });
+      onClose();
+      router.push(`/projects/${slug}/tests/${t.id}`);
+    },
+    onError: (err) => {
+      setError(err instanceof SentinelApiError ? err.message : 'Failed to create test.');
+    },
+  });
+
+  return (
+    <Dialog.Portal>
+      <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50" />
+      <Dialog.Content
+        className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-background p-6 shadow-xl focus:outline-none"
+        aria-describedby="new-test-desc"
+      >
+        <Dialog.Title className="text-lg font-semibold mb-1">New test</Dialog.Title>
+        <Dialog.Description id="new-test-desc" className="text-sm text-muted-foreground mb-4">
+          Creates a starter test file you can edit in the code editor.
+        </Dialog.Description>
+
+        <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); mutation.mutate(); }}>
+          <div className="space-y-2">
+            <Label htmlFor="test-name">Test name</Label>
+            <Input
+              id="test-name"
+              placeholder="Homepage loads correctly"
+              value={name}
+              onChange={(e) => handleNameChange(e.target.value)}
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="test-path">File path</Label>
+            <Input
+              id="test-path"
+              placeholder="homepage.spec.ts"
+              value={filePath}
+              onChange={(e) => { setFilePath(e.target.value); setAutoPath(false); }}
+              pattern="^[a-z0-9/_-]+\.spec\.ts$"
+              required
+            />
+            <p className="text-xs text-muted-foreground">e.g. <code className="font-mono">contact/form.spec.ts</code></p>
+          </div>
+
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={mutation.isPending || !name.trim() || !filePath.trim()}>
+              {mutation.isPending && <Loader2Icon className="h-4 w-4 animate-spin" />}
+              Create &amp; open editor
+            </Button>
+          </div>
+        </form>
+      </Dialog.Content>
+    </Dialog.Portal>
+  );
+}
+
 export default function TestsPage({ params }: Props) {
   const { slug } = use(params);
+  const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
 
   const { data: tests, isLoading, isError } = useQuery({
@@ -117,10 +214,15 @@ export default function TestsPage({ params }: Props) {
             / tests
           </p>
         </div>
-        <Button disabled title="New test creation coming soon">
-          <PlusIcon className="h-4 w-4" aria-hidden="true" />
-          New test
-        </Button>
+        <Dialog.Root open={open} onOpenChange={setOpen}>
+          <Dialog.Trigger asChild>
+            <Button>
+              <PlusIcon className="h-4 w-4" aria-hidden="true" />
+              New test
+            </Button>
+          </Dialog.Trigger>
+          {open && <NewTestModal slug={slug} onClose={() => setOpen(false)} />}
+        </Dialog.Root>
       </div>
 
       {/* Search */}
@@ -157,9 +259,13 @@ export default function TestsPage({ params }: Props) {
               {search ? 'No tests match your search' : 'No tests yet'}
             </p>
             {!search && (
-              <p className="text-xs text-muted-foreground">
-                Tests are created when you push spec files through the API.
-              </p>
+              <>
+                <p className="text-xs text-muted-foreground">Click New test to create your first Playwright test.</p>
+                <Button size="sm" onClick={() => setOpen(true)}>
+                  <PlusIcon className="h-4 w-4" />
+                  Create your first test
+                </Button>
+              </>
             )}
           </CardContent>
         </Card>
