@@ -25,21 +25,33 @@ function formatEvent(type: string, p: Record<string, unknown>): string {
       return `▶  Run started — ${p['totalTests']} test${Number(p['totalTests']) === 1 ? '' : 's'}, ${p['workers']} worker (Playwright ${p['playwrightVersion']})`;
     case 'run.end':
       return `■  Run finished — ${p['status']}  (${p['durationMs']}ms)`;
-    case 'test.begin':
-      return `  ○ ${p['title'] ?? p['testId']}  [${p['projectLabel']}]${Number(p['attemptIndex']) > 0 ? `  retry #${p['attemptIndex']}` : ''}`;
+    case 'test.begin': {
+      const tid = String(p['testId'] ?? '');
+      const title = String(p['title'] ?? tid);
+      testTitles.set(tid, title);
+      return `  ○ ${title}  [${p['projectLabel']}]${Number(p['attemptIndex']) > 0 ? `  retry #${p['attemptIndex']}` : ''}`;
+    }
     case 'test.end': {
+      const tid = String(p['testId'] ?? '');
+      const title = testTitles.get(tid) ?? tid;
       const ok = p['status'] === 'passed';
       const icon = ok ? '  ✓' : p['status'] === 'skipped' ? '  -' : '  ✗';
-      const err = p['error'] ? `\n      ${(p['error'] as Record<string, unknown>)['message'] ?? p['error']}` : '';
-      return `${icon} ${p['title'] ?? p['testId']}  (${p['durationMs']}ms)${err}`;
+      const err = p['error'] ? `  — ${(p['error'] as Record<string, unknown>)['message'] ?? p['error']}` : '';
+      return `${icon} ${title}  (${p['durationMs']}ms)${err}`;
     }
-    case 'step.begin':
-      return `    → ${p['title']}`;
+    case 'step.begin': {
+      const sid = String(p['stepId'] ?? '');
+      const title = String(p['title'] ?? '');
+      stepTitles.set(sid, title);
+      return `    → ${title}`;
+    }
     case 'step.end': {
+      const sid = String(p['stepId'] ?? '');
+      const title = stepTitles.get(sid) ?? String(p['title'] ?? '');
       if (p['status'] === 'failed' && p['error']) {
-        return `    ✗ ${p['title']}  — ${p['error']}`;
+        return `    ✗ ${title}  — ${p['error']}`;
       }
-      return `    ✓ ${p['title']}  (${p['durationMs']}ms)`;
+      return `    ✓ ${title}  (${p['durationMs']}ms)`;
     }
     case 'test.stdout':
       return `    [stdout] ${String(p['chunk'] ?? '').trim()}`;
@@ -63,6 +75,11 @@ export interface LiveLogProps {
 }
 
 let lineCounter = 0;
+
+// Kept outside the component so it persists across the SSE event callbacks
+// without needing to be in React state (which would be stale in closures).
+const stepTitles = new Map<string, string>(); // stepId → title
+const testTitles = new Map<string, string>(); // testId → title
 
 export function LiveLog({ runId, className }: LiveLogProps) {
   const [lines, setLines] = useState<LogLine[]>([]);
@@ -100,6 +117,8 @@ export function LiveLog({ runId, className }: LiveLogProps) {
   );
 
   useEffect(() => {
+    stepTitles.clear();
+    testTitles.clear();
     const es = new EventSource(`${BASE_URL}/runs/${runId}/events`);
     setConnected(false);
 
