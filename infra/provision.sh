@@ -123,8 +123,16 @@ if ! command -v node >/dev/null || [[ "$(node -v)" != v${NODE_MAJOR}* ]]; then
   apt_wait
   apt-get install -y -qq nodejs >/dev/null
 fi
-corepack enable >/dev/null 2>&1 || npm i -g corepack >/dev/null
-npm i -g pnpm pm2 >/dev/null
+# corepack's shim and `npm i -g pnpm` both want to own /usr/bin/pnpm, and corepack
+# gets there first — the npm install then dies with EEXIST. Let corepack own pnpm:
+# package.json pins pnpm@9.15.0 and pnpm-lock.yaml is lockfileVersion 9.0, so
+# `npm i -g pnpm` would have installed pnpm 10 and then fought the lockfile.
+# npm installs pm2 only.
+corepack enable pnpm >/dev/null 2>&1 || npm i -g --force "pnpm@9" >/dev/null
+npm i -g pm2 >/dev/null
+# Corepack asks for confirmation before downloading a pinned version, which would
+# hang forever with no tty.
+export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 node -v && pnpm -v
 
 # ─────────────────────────────────────────────────────────────────────────────
