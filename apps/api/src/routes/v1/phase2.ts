@@ -231,20 +231,20 @@ export async function phase2Routes(app: FastifyInstance): Promise<void> {
         params: z.object({ id: z.string() }),
         response: {
           200: z.object({
-            flakiestTests: z.array(
+            flakyTests: z.array(
               z.object({
-                testCaseId: z.string(),
-                name: z.string(),
+                testId: z.string(),
+                testName: z.string(),
                 browser: z.string(),
                 flakeScore: z.number(),
                 p95DurationMs: z.number(),
-                runs: z.number(),
+                runs7d: z.number(),
               }),
             ),
             slowestTests: z.array(
               z.object({
-                testCaseId: z.string(),
-                name: z.string(),
+                testId: z.string(),
+                testName: z.string(),
                 browser: z.string(),
                 p95DurationMs: z.number(),
                 p50DurationMs: z.number(),
@@ -285,12 +285,12 @@ export async function phase2Routes(app: FastifyInstance): Promise<void> {
       });
 
       const flakiestTests = flakiestStats.map((ts) => ({
-        testCaseId: ts.testCaseId,
-        name: ts.testCase.name,
+        testId: ts.testCaseId,
+        testName: ts.testCase.name,
         browser: ts.browser as string,
         flakeScore: ts.flakeScore,
         p95DurationMs: ts.p95DurationMs,
-        runs: ts.runs,
+        runs7d: ts.runs,
       }));
 
       // Slowest tests: top 10 by p95DurationMs, windowDays=7
@@ -302,8 +302,8 @@ export async function phase2Routes(app: FastifyInstance): Promise<void> {
       });
 
       const slowestTests = slowestStats.map((ts) => ({
-        testCaseId: ts.testCaseId,
-        name: ts.testCase.name,
+        testId: ts.testCaseId,
+        testName: ts.testCase.name,
         browser: ts.browser as string,
         p95DurationMs: ts.p95DurationMs,
         p50DurationMs: ts.p50DurationMs,
@@ -342,7 +342,7 @@ export async function phase2Routes(app: FastifyInstance): Promise<void> {
           passed,
         }));
 
-      return reply.status(200).send({ flakiestTests, slowestTests, passRateTrend });
+      return reply.status(200).send({ flakyTests: flakiestTests, slowestTests, passRateTrend });
     },
   );
 
