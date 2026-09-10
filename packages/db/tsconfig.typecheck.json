@@ -10,5 +10,5 @@
     "declarationMap": false,
     "rootDir": "."
   },
-  "include": ["src/**/*", "prisma/**/*.ts"]
+  "include": ["src/**/*", "prisma/**/*.ts", "scripts/**/*.ts"]
 }

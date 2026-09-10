@@ -1,0 +1,14 @@
+{
+  // `tsconfig.json` is the *build* config: `rootDir: src` and `include: src/**/*`,
+  // so anything outside src — like `scripts/check-db-exports.ts`, which really runs
+  // in CI — is neither type-checked nor lintable. This config covers those too and
+  // emits nothing. (Same split as packages/db.)
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "rootDir": "."
+  },
+  "include": ["src/**/*", "scripts/**/*.ts"]
+}

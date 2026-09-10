@@ -14,7 +14,8 @@
     "db:reset": "prisma migrate reset --force",
     "db:seed": "tsx --env-file=.env prisma/seed.ts",
     "db:studio": "prisma studio",
-    "lint": "eslint . --max-warnings 0"
+    "lint": "eslint . --max-warnings 0",
+    "test": "tsx scripts/check-exports.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0"

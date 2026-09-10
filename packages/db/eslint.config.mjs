@@ -15,7 +15,7 @@ export default [
   {
     // `prisma/` holds one-off scripts run by hand or in deploy (`db:seed`).
     // Printing progress to stdout is the point, not a stray debug statement.
-    files: ['prisma/**/*.ts'],
+    files: ['prisma/**/*.ts', 'scripts/**/*.ts'],
     rules: {
       'no-console': 'off',
     },

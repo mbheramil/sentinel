@@ -7,9 +7,9 @@
     "dev": "node --env-file=.env --import tsx/esm --watch src/server.ts",
     "build": "tsc --project tsconfig.json",
     "start": "node dist/server.js",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "lint": "eslint . --max-warnings 0",
-    "test": "vitest run --passWithNoTests",
+    "test": "node --import tsx/esm scripts/check-db-exports.ts && vitest run --passWithNoTests",
     "test:unit": "vitest run --passWithNoTests",
     "test:integration": "vitest run --reporter=verbose src/**/*.integration.test.ts"
   },
