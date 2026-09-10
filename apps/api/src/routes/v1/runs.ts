@@ -483,6 +483,7 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
               status: z.string(),
               durationMs: z.number().nullable(),
               attemptCount: z.number(),
+              firstAttemptId: z.string().nullable(),
             }),
           ),
           401: ErrorSchema,
@@ -525,6 +526,7 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
           status: rt.status,
           durationMs: rt.durationMs,
           attemptCount: rt.attempts.length,
+          firstAttemptId: rt.attempts[0]?.id ?? null,
         })),
       );
     },

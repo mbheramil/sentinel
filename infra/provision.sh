@@ -270,6 +270,7 @@ pnpm --filter @sentinel/ir build     2>&1 | tail -2
 pnpm --filter @sentinel/db exec prisma generate 2>&1 | tail -2
 pnpm --filter @sentinel/db exec prisma migrate deploy 2>&1 | tail -3
 pnpm --filter @sentinel/db exec tsx prisma/seed.ts 2>&1 | tail -3 || warn "Seed failed (non-fatal)."
+pnpm --filter @sentinel/runner build 2>&1 | tail -2
 # Cap the heap so a build can never OOM-kill Postgres/Redis out from under us.
 NODE_OPTIONS='--max-old-space-size=1400' pnpm --filter @sentinel/web build 2>&1 | tail -6
 
@@ -348,6 +349,23 @@ module.exports = {
       env,
       max_memory_restart: '600M',
     },
+    {
+      // Runner: executes Playwright tests on behalf of the API.
+      // SANDBOX_STRATEGY=local — Docker is not installed on this box. Local means
+      // Playwright runs directly in this process; isolation is not as strong as
+      // Docker but fully functional.
+      name: 'runner',
+      cwd: '${APP_DIR}/apps/runner',
+      script: 'node',
+      args: 'dist/worker.js',
+      env: {
+        ...env,
+        SANDBOX_STRATEGY: 'local',
+        API_INTERNAL_URL: 'http://127.0.0.1:3001',
+        RUNNER_MAX_SLOTS: '1',
+      },
+      max_memory_restart: '800M',
+    },
   ],
 };
 EOF
@@ -393,6 +411,17 @@ VERIFY_FAILED=0
 check 'api   /healthz' http://127.0.0.1:3001/healthz || VERIFY_FAILED=1
 check 'web   /login'   http://127.0.0.1:3000/login   || VERIFY_FAILED=1
 check 'nginx /login'   http://127.0.0.1/login        || VERIFY_FAILED=1
+# Runner is a BullMQ worker with no HTTP port — verify it is in the pm2 list and online.
+sleep 5
+as_app pm2 jlist 2>/dev/null | python3 -c "
+import sys, json
+procs = json.load(sys.stdin)
+r = next((p for p in procs if p.get('name') == 'runner'), None)
+if not r or r.get('pm2_env', {}).get('status') != 'online':
+    print('runner: FAILED (not online)')
+    sys.exit(1)
+print('runner: OK')
+" || VERIFY_FAILED=1
 # `pm2 list` as root would show root's (now deliberately empty) daemon, not ours.
 as_app pm2 list
 

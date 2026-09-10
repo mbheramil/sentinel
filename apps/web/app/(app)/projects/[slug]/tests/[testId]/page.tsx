@@ -173,7 +173,7 @@ function Sparkline({ items, height = 40 }: SparklineProps) {
   );
 }
 
-function RecentRunsTab({ testId }: { testId: string }) {
+function RecentRunsTab({ testId, slug }: { testId: string; slug: string }) {
   const { data: history, isLoading } = useQuery({
     queryKey: ['test-history', testId],
     queryFn: () => apiClient.getTestHistory(testId, { limit: 30 }),
@@ -232,7 +232,7 @@ function RecentRunsTab({ testId }: { testId: string }) {
           {recent.map((item) => (
             <li key={item.attemptId}>
               <Link
-                href={`/runs/${item.runId}/attempts/${item.attemptId}`}
+                href={`/projects/${slug}/runs/${item.runId}/attempts/${item.attemptId}`}
                 className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors"
               >
                 <span
@@ -315,8 +315,16 @@ export default function TestEditorPage({ params }: Props) {
   const validateMutation = useMutation({
     mutationFn: () => apiClient.validateTest(testId),
     onSuccess: (result) => {
-      setValidationErrors(result.errors);
-      setValidationWarnings(result.warnings);
+      setValidationErrors(
+        result.diagnostics
+          .filter((d) => d.severity === 'error')
+          .map((d) => ({ line: d.line, column: d.col, message: d.message })),
+      );
+      setValidationWarnings(
+        result.diagnostics
+          .filter((d) => d.severity === 'warning')
+          .map((d) => ({ line: d.line, column: d.col, message: d.message })),
+      );
     },
   });
 
@@ -628,7 +636,7 @@ export default function TestEditorPage({ params }: Props) {
             )}
 
             {railTab === 'history' && <HistoryTab testId={testId} />}
-            {railTab === 'runs' && <RecentRunsTab testId={testId} />}
+            {railTab === 'runs' && <RecentRunsTab testId={testId} slug={slug} />}
           </div>
         </aside>
       </div>

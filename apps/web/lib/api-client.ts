@@ -134,6 +134,7 @@ export interface RunTestResponse {
   consoleErrorCount?: number;
   networkErrorCount?: number;
   attemptCount?: number;
+  firstAttemptId?: string | null;
 }
 
 export interface AttemptResponse {
@@ -258,8 +259,7 @@ export interface CreateEnvironmentInput {
 
 export interface ValidateTestResponse {
   valid: boolean;
-  errors: Array<{ line: number; column: number; message: string }>;
-  warnings: Array<{ line: number; column: number; message: string }>;
+  diagnostics: Array<{ line: number; col: number; message: string; severity: 'error' | 'warning' }>;
 }
 
 export interface GenerateTestResponse {
@@ -399,8 +399,8 @@ export const apiClient = {
     return request<TestCaseResponse[]>(`/projects/${projectSlug}/tests`);
   },
 
-  getTest(projectSlug: string, testId: string): Promise<TestCaseResponse> {
-    return request<TestCaseResponse>(`/projects/${projectSlug}/tests/${testId}`);
+  getTest(_projectSlug: string, testId: string): Promise<TestCaseResponse> {
+    return request<TestCaseResponse>(`/tests/${testId}`);
   },
 
   createTest(
@@ -414,7 +414,7 @@ export const apiClient = {
   },
 
   updateTest(
-    projectSlug: string,
+    _projectSlug: string,
     testId: string,
     input: Partial<{
       name: string;
@@ -425,7 +425,7 @@ export const apiClient = {
       isMuted: boolean;
     }>,
   ): Promise<TestCaseResponse> {
-    return request<TestCaseResponse>(`/projects/${projectSlug}/tests/${testId}`, {
+    return request<TestCaseResponse>(`/tests/${testId}`, {
       method: 'PATCH',
       body: JSON.stringify(input),
     });
@@ -481,15 +481,15 @@ export const apiClient = {
     const qs = new URLSearchParams();
     if (params?.status) qs.set('status', params.status);
     if (params?.page !== undefined) qs.set('page', String(params.page));
-    if (params?.pageSize !== undefined) qs.set('pageSize', String(params.pageSize));
+    if (params?.pageSize !== undefined) qs.set('perPage', String(params.pageSize));
     const q = qs.toString();
     // The API returns { data: RunResponse[], meta: { page, perPage, total } }.
     return request<{ data: RunResponse[] }>(`/projects/${projectSlug}/runs${q ? `?${q}` : ''}`)
       .then((r) => r.data);
   },
 
-  createRun(projectSlug: string, input: CreateRunInput): Promise<RunResponse> {
-    return request<RunResponse>(`/projects/${projectSlug}/runs`, {
+  createRun(projectSlug: string, input: CreateRunInput): Promise<{ runId: string; status: string }> {
+    return request<{ runId: string; status: string }>(`/projects/${projectSlug}/runs`, {
       method: 'POST',
       body: JSON.stringify(input),
     });
@@ -499,8 +499,8 @@ export const apiClient = {
     return request<RunResponse>(`/runs/${runId}`);
   },
 
-  cancelRun(runId: string): Promise<RunResponse> {
-    return request<RunResponse>(`/runs/${runId}/cancel`, { method: 'POST' });
+  cancelRun(runId: string): Promise<{ ok: boolean }> {
+    return request<{ ok: boolean }>(`/runs/${runId}/cancel`, { method: 'POST' });
   },
 
   getRunShards(runId: string): Promise<RunShardResponse[]> {
@@ -544,8 +544,8 @@ export const apiClient = {
     return request<ProjectInsightsResponse>(`/projects/${projectSlug}/insights`);
   },
 
-  retryRun(runId: string, failedOnly?: boolean): Promise<RunResponse> {
-    return request<RunResponse>(`/runs/${runId}/retry`, {
+  retryRun(runId: string, failedOnly?: boolean): Promise<{ runId: string; status: string }> {
+    return request<{ runId: string; status: string }>(`/runs/${runId}/retry`, {
       method: 'POST',
       body: JSON.stringify({ failedOnly: failedOnly ?? false }),
     });

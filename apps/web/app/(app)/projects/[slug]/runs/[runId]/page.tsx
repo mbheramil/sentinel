@@ -340,12 +340,16 @@ export default function RunDetailPage({ params }: Props) {
                           </div>
                         </td>
                         <td className="px-4 py-2.5 text-right">
-                          <Link
-                            href={`/projects/${slug}/runs/${runId}/attempts/${t.id}`}
-                            className="text-xs text-primary underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-none"
-                          >
-                            View attempt
-                          </Link>
+                          {t.firstAttemptId ? (
+                            <Link
+                              href={`/projects/${slug}/runs/${runId}/attempts/${t.firstAttemptId}`}
+                              className="text-xs text-primary underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-none"
+                            >
+                              View attempt
+                            </Link>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">No attempt</span>
+                          )}
                         </td>
                       </tr>
                     ))}

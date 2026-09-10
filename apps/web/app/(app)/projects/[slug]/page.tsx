@@ -3,6 +3,7 @@
 import { use } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Loader2Icon, PlayIcon, FlaskConicalIcon, ListIcon, CalendarIcon, ServerIcon, SettingsIcon, TrendingUpIcon } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { StatusBadge } from '@/components/status-badge';
@@ -60,6 +61,7 @@ const TAB_LINKS = [
 
 export default function ProjectPage({ params }: Props) {
   const { slug } = use(params);
+  const router = useRouter();
 
   const { data: project, isLoading, isError } = useQuery({
     queryKey: ['project', slug],
@@ -78,6 +80,9 @@ export default function ProjectPage({ params }: Props) {
         environmentId: envId,
         browsers: project?.defaultBrowsers ?? ['CHROMIUM'],
       });
+    },
+    onSuccess: (result) => {
+      router.push(`/projects/${slug}/runs/${result.runId}`);
     },
   });
 
@@ -103,6 +108,13 @@ export default function ProjectPage({ params }: Props) {
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
+      {/* Breadcrumb */}
+      <nav className="text-sm text-muted-foreground" aria-label="Breadcrumb">
+        <Link href="/projects" className="hover:underline focus-visible:underline">Projects</Link>
+        {' / '}
+        <span className="text-foreground font-medium">{project.name}</span>
+      </nav>
+
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
