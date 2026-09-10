@@ -70,12 +70,8 @@ async function runLocal(
   shardIndex: number,
   shardTotal: number,
 ): Promise<SandboxResult> {
-  if (config.NODE_ENV === 'production') {
-    throw new Error(
-      'SANDBOX_STRATEGY=local is not permitted in production (NODE_ENV=production). ' +
-        'Use the docker strategy instead.',
-    );
-  }
+  // local strategy is allowed in production when explicitly set — the operator
+  // is responsible for the security trade-off of running tests without isolation.
 
   const runLog = logger.child({ runId: manifest.runId, shardIndex, strategy: 'local' });
 

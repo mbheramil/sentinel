@@ -332,13 +332,15 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
         params: z.object({ id: z.string() }),
         body: z.object({
           status: z.enum(['PASSED', 'FAILED', 'ERROR', 'CANCELED', 'TIMED_OUT']),
+          // Optional: the runner streams per-test events during execution;
+          // testResults here is a final reconciliation pass. Defaults to empty.
           testResults: z.array(
             z.object({
               runTestId: z.string(),
               status: z.enum(['PASSED', 'FAILED', 'FLAKY', 'SKIPPED', 'TIMED_OUT']),
               durationMs: z.number().int().optional(),
             }),
-          ),
+          ).default([]),
         }),
         response: { 200: z.object({ ok: z.boolean() }), 404: ErrorSchema },
       },
