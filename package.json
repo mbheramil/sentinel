@@ -1,0 +1,38 @@
+{
+  "name": "sentinel",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:unit": "turbo run test:unit",
+    "test:integration": "turbo run test:integration",
+    "db:generate": "turbo run db:generate --filter=@sentinel/db",
+    "db:migrate": "turbo run db:migrate --filter=@sentinel/db",
+    "db:reset": "turbo run db:reset --filter=@sentinel/db",
+    "db:seed": "turbo run db:seed --filter=@sentinel/db",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md,yaml,yml}\" --ignore-path .gitignore",
+    "format:check": "prettier --check \"**/*.{ts,tsx,json,md,yaml,yml}\" --ignore-path .gitignore",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@sentinel/config": "workspace:*",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.3.0",
+    "prettier": "^3.4.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": ["eslint --fix", "prettier --write"],
+    "*.{json,md,yaml,yml}": ["prettier --write"]
+  },
+  "packageManager": "pnpm@9.15.0"
+}

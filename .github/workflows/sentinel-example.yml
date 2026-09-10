@@ -1,0 +1,32 @@
+name: E2E Tests via Sentinel
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  e2e:
+    name: Run E2E Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Sentinel E2E tests
+        uses: ./.github/actions/sentinel
+        with:
+          api-key: ${{ secrets.SENTINEL_API_KEY }}
+          project: my-project
+          environment: production
+          wait: 'true'
+          reporter: junit
+
+      - name: Publish JUnit test results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: sentinel-results.xml
+          check_name: Sentinel E2E Results

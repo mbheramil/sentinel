@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sentinel.fullname" . }}-runner
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "sentinel.runner.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.runner.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "sentinel.runner.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sentinel.runner.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+    spec:
+      {{- include "sentinel.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: runner
+          image: {{ include "sentinel.image" (dict "registry" .Values.global.imageRegistry "repo" .Values.runner.image.repository "tag" .Values.runner.image.tag) }}
+          imagePullPolicy: {{ .Values.runner.image.pullPolicy }}
+          env:
+            - name: SENTINEL_API_URL
+              value: "http://{{ include "sentinel.fullname" . }}-api:{{ .Values.api.service.port }}"
+            - name: SANDBOX_STRATEGY
+              value: {{ .Values.runner.sandboxStrategy | quote }}
+            - name: MAX_SLOTS
+              value: {{ .Values.runner.maxSlots | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ include "sentinel.secretName" . }}
+          resources:
+            {{- toYaml .Values.runner.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+          # Runner needs access to Docker socket when sandboxStrategy=docker
+          {{- if eq .Values.runner.sandboxStrategy "docker" }}
+          volumeMounts:
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+          {{- end }}
+      {{- if eq .Values.runner.sandboxStrategy "docker" }}
+      volumes:
+        - name: docker-sock
+          hostPath:
+            path: /var/run/docker.sock
+            type: Socket
+      {{- end }}
+      securityContext:
+        fsGroup: 1000

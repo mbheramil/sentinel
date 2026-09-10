@@ -1,0 +1,78 @@
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+
+api:
+  replicaCount: 1
+  image:
+    repository: sentinel/api
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3001
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  env:
+    NODE_ENV: production
+    API_PORT: "3001"
+    # Sensitive values go in a Secret — see existingSecret below
+  existingSecret: ""  # name of k8s Secret with DATABASE_URL, REDIS_URL, SENTINEL_ENCRYPTION_KEY, etc.
+
+web:
+  replicaCount: 1
+  image:
+    repository: sentinel/web
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3000
+  ingress:
+    enabled: false
+    className: nginx
+    host: sentinel.example.com
+    tls: []
+    # tls:
+    #   - secretName: sentinel-tls
+    #     hosts:
+    #       - sentinel.example.com
+
+runner:
+  replicaCount: 2
+  image:
+    repository: sentinel/runner
+    tag: latest
+    pullPolicy: IfNotPresent
+  sandboxStrategy: docker
+  maxSlots: 2
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+
+postgresql:
+  enabled: true  # set false to use external
+  auth:
+    username: sentinel
+    password: ""
+    database: sentinel
+
+redis:
+  enabled: true  # set false to use external
+  auth:
+    enabled: false
+
+minio:
+  enabled: true  # set false to use external S3
+  auth:
+    rootUser: sentinel
+    rootPassword: ""

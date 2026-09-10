@@ -1,0 +1,27 @@
+{
+  "name": "@sentinel/cli",
+  "version": "0.1.0",
+  "private": false,
+  "bin": { "sentinel": "./dist/index.js" },
+  "type": "module",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "echo CLI ready - use: node dist/index.js"
+  },
+  "dependencies": {
+    "@sentinel/shared": "workspace:*",
+    "commander": "^12.1.0",
+    "ora": "^8.1.1",
+    "chalk": "^5.4.1",
+    "conf": "^13.0.0",
+    "keytar": "^7.9.0",
+    "node-fetch": "^3.3.2",
+    "cli-table3": "^0.6.5"
+  },
+  "devDependencies": {
+    "@sentinel/config": "workspace:*",
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

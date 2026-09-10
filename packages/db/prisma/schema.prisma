@@ -1,0 +1,754 @@
+// This is your Prisma schema file.
+// https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ─────────────────────────────────────────────────────────────────
+
+enum Role {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum Browser {
+  CHROMIUM
+  FIREFOX
+  WEBKIT
+}
+
+enum AuthoringMode {
+  CODE
+  BUILDER
+  AI_GENERATED
+  RECORDED
+}
+
+enum SuiteMode {
+  EXPLICIT
+  TAG_QUERY
+}
+
+enum OverlapPolicy {
+  SKIP
+  QUEUE
+}
+
+enum RunTrigger {
+  MANUAL
+  SCHEDULE
+  API
+  CI
+  WEBHOOK
+  RETRY
+}
+
+enum RunStatus {
+  QUEUED
+  RUNNING
+  PASSED
+  FAILED
+  CANCELED
+  ERROR
+  TIMED_OUT
+}
+
+enum TestStatus {
+  PENDING
+  RUNNING
+  PASSED
+  FAILED
+  FLAKY
+  SKIPPED
+  TIMED_OUT
+}
+
+enum ArtifactKind {
+  SCREENSHOT
+  VIDEO
+  TRACE
+  HTML_REPORT
+  LOG
+  HAR
+  STDOUT
+  DIFF
+  BASELINE
+  CONSOLE_LOG
+  NETWORK_LOG
+}
+
+enum IntegrationType {
+  SLACK
+  EMAIL
+  WEBHOOK
+  GITHUB
+}
+
+enum TaskKind {
+  CLEANUP
+  SEED
+  CUSTOM
+}
+
+// ─── Identity & tenancy ────────────────────────────────────────────────────
+
+model User {
+  id              String    @id @default(cuid())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  email           String    @unique
+  name            String?
+  passwordHash    String?
+  image           String?
+  emailVerifiedAt DateTime?
+
+  memberships Membership[]
+  accounts    Account[]
+  sessions    Session[]
+  apiKeys     ApiKey[]
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  name      String
+  slug      String   @unique
+
+  memberships  Membership[]
+  invitations  Invitation[]
+  projects     Project[]
+  apiKeys      ApiKey[]
+  integrations Integration[]
+  auditLogs    AuditLog[]
+}
+
+model Membership {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userId    String
+  orgId     String
+  role      Role
+
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+  @@index([orgId])
+  @@index([userId])
+}
+
+model Invitation {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  orgId       String
+  email       String
+  role        Role
+  token       String    @unique
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([token])
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  orgId       String
+  createdById String?
+  name        String
+  prefix      String    @unique
+  hash        String
+  scopes      String[]
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdBy User?        @relation(fields: [createdById], references: [id])
+  runs      Run[]
+
+  @@index([orgId])
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  createdAt      DateTime @default(now())
+  orgId          String
+  actorUserId    String?
+  actorApiKeyId  String?
+  action         String
+  targetType     String
+  targetId       String
+  meta           Json     @default("{}")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, createdAt(sort: Desc)])
+  @@index([targetType, targetId])
+}
+
+// Auth.js required models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Project configuration ─────────────────────────────────────────────────
+
+model Project {
+  id                     String   @id @default(cuid())
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  orgId                  String
+  name                   String
+  slug                   String
+  description            String?
+  defaultBrowsers        Browser[]
+  defaultTimeoutMs       Int      @default(30000)
+  defaultRetries         Int      @default(1)
+  defaultExpectTimeoutMs Int      @default(5000)
+  concurrency            Int      @default(2)
+  artifactRetentionDays  Int      @default(30)
+  // §22.1 diagnostic gating
+  failOnConsoleError     Boolean  @default(false)
+  failOnNetworkError     Boolean  @default(false)
+  diagnosticsIgnore      String[]
+  // §22.4 test data hygiene
+  testDataPrefix         String   @default("[SENTINEL TEST]")
+  testEmailLocal         String?
+  testEmailDomain        String?
+
+  org          Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  environments Environment[]
+  testCases    TestCase[]
+  suites       Suite[]
+  schedules    Schedule[]
+  runs         Run[]
+  testStats    TestStat[]
+  integrations Integration[]
+  tasks        Task[]
+  captureEndpoints CaptureEndpoint[]
+
+  @@unique([orgId, slug])
+  @@index([orgId])
+}
+
+model Environment {
+  id                    String   @id @default(cuid())
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  projectId             String
+  name                  String
+  baseUrl               String
+  isDefault             Boolean  @default(false)
+  variables             Json     @default("{}")
+  secretsCiphertext     Bytes?
+  httpCredentials       Json?
+  storageStateCiphertext Bytes?
+
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  runs      Run[]
+  schedules Schedule[]
+  tasks     Task[]
+
+  @@unique([projectId, name])
+  @@index([projectId])
+}
+
+// ─── Tests ─────────────────────────────────────────────────────────────────
+
+model TestCase {
+  id               String        @id @default(cuid())
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  projectId        String
+  name             String
+  description      String?
+  authoringMode    AuthoringMode @default(CODE)
+  filePath         String
+  code             String        @db.Text
+  stepsIr          Json?
+  tags             String[]
+  isMuted          Boolean       @default(false)
+  isArchived       Boolean       @default(false)
+  currentVersionId String?
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions     TestVersion[]
+  suiteItems   SuiteItem[]
+  runTests     RunTest[]
+  testStats    TestStat[]
+
+  @@unique([projectId, filePath])
+  @@index([projectId])
+}
+
+model TestVersion {
+  id             String   @id @default(cuid())
+  createdAt      DateTime @default(now())
+  testCaseId     String
+  version        Int
+  code           String   @db.Text
+  stepsIr        Json?
+  message        String?
+  createdByUserId String?
+
+  testCase TestCase @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
+  runTests RunTest[]
+
+  @@unique([testCaseId, version])
+  @@index([testCaseId])
+}
+
+model Suite {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  projectId   String
+  name        String
+  description String?
+  mode        SuiteMode @default(EXPLICIT)
+  tagQuery    Json?
+  // §22.4 setup/teardown tasks
+  setupTaskId    String?
+  teardownTaskId String?
+
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  items     SuiteItem[]
+  schedules Schedule[]
+  runs      Run[]
+
+  @@index([projectId])
+}
+
+model SuiteItem {
+  id          String @id @default(cuid())
+  suiteId     String
+  testCaseId  String
+  position    Int
+
+  suite    Suite    @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  testCase TestCase @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
+
+  @@unique([suiteId, testCaseId])
+  @@index([suiteId])
+}
+
+model Schedule {
+  id              String        @id @default(cuid())
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  projectId       String
+  suiteId         String?
+  taskId          String?       // §22.4: exactly one of suiteId or taskId
+  environmentId   String
+  name            String
+  cron            String
+  timezone        String        @default("UTC")
+  browsers        Browser[]
+  isEnabled       Boolean       @default(true)
+  overlapPolicy   OverlapPolicy @default(SKIP)
+  lastRunAt       DateTime?
+  nextRunAt       DateTime?
+
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  suite       Suite?      @relation(fields: [suiteId], references: [id])
+  task        Task?       @relation(fields: [taskId], references: [id])
+  environment Environment @relation(fields: [environmentId], references: [id])
+}
+
+// ─── Execution & results ───────────────────────────────────────────────────
+
+model Run {
+  id                  String     @id @default(cuid())
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  projectId           String
+  suiteId             String?
+  environmentId       String
+  trigger             RunTrigger
+  status              RunStatus  @default(QUEUED)
+  browsers            Browser[]
+  shardCount          Int        @default(1)
+  traceMode           String     @default("retain-on-failure")
+  createdByUserId     String?
+  createdByApiKeyId   String?
+  retryOfRunId        String?
+  gitRef              String?
+  gitSha              String?
+  ciProvider          String?
+  ciBuildUrl          String?
+  queuedAt            DateTime   @default(now())
+  startedAt           DateTime?
+  finishedAt          DateTime?
+  durationMs          Int?
+  totals              Json       @default("{}")
+  errorMessage        String?
+  // §22.4 teardown warning
+  teardownFailed      Boolean    @default(false)
+
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  suite       Suite?      @relation(fields: [suiteId], references: [id])
+  environment Environment @relation(fields: [environmentId], references: [id])
+  apiKey      ApiKey?     @relation(fields: [createdByApiKeyId], references: [id])
+  shards      RunShard[]
+  runTests    RunTest[]
+  artifacts   Artifact[]
+  notifications Notification[]
+  captureEvents CaptureEvent[]
+  runEvents   RunEvent[]
+
+  @@index([projectId, createdAt(sort: Desc)])
+  @@index([status])
+}
+
+model RunShard {
+  id           String    @id @default(cuid())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  runId        String
+  index        Int
+  total        Int
+  status       RunStatus @default(QUEUED)
+  runnerId     String?
+  claimedAt    DateTime?
+  heartbeatAt  DateTime?
+  finishedAt   DateTime?
+  attemptCount Int       @default(0)
+
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, index])
+  @@index([runId])
+  @@index([status, heartbeatAt])
+}
+
+model RunTest {
+  id             String     @id @default(cuid())
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  runId          String
+  testCaseId     String
+  testVersionId  String
+  shardIndex     Int
+  browser        Browser
+  projectLabel   String
+  status         TestStatus @default(PENDING)
+  durationMs     Int?
+
+  run         Run         @relation(fields: [runId], references: [id], onDelete: Cascade)
+  testCase    TestCase    @relation(fields: [testCaseId], references: [id])
+  testVersion TestVersion @relation(fields: [testVersionId], references: [id])
+  attempts    Attempt[]
+
+  @@unique([runId, testCaseId, browser])
+  @@index([runId])
+  @@index([testCaseId, createdAt(sort: Desc)])
+}
+
+model Attempt {
+  id              String     @id @default(cuid())
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  runTestId       String
+  index           Int
+  status          TestStatus
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  durationMs      Int?
+  errorName       String?
+  errorMessage    String?    @db.Text
+  errorStack      String?    @db.Text
+  errorSnippet    String?    @db.Text
+  expectedText    String?    @db.Text
+  actualText      String?    @db.Text
+  stdout          String?    @db.Text
+  stderr          String?    @db.Text
+  // §22.1 browser diagnostics
+  consoleErrorCount Int      @default(0)
+  consoleWarnCount  Int      @default(0)
+  networkErrorCount Int      @default(0)
+  topDiagnostics    Json?
+  finalUrl          String?
+
+  runTest   RunTest      @relation(fields: [runTestId], references: [id], onDelete: Cascade)
+  steps     StepResult[]
+  artifacts Artifact[]
+
+  @@unique([runTestId, index])
+  @@index([runTestId])
+}
+
+model StepResult {
+  id           String  @id @default(cuid())
+  attemptId    String
+  parentId     String?
+  position     Int
+  depth        Int
+  title        String
+  category     String
+  status       TestStatus
+  durationMs   Int?
+  errorMessage String?  @db.Text
+  selector     String?
+  url          String?
+  httpStatus   Int?     // §22.2 navigation status
+
+  attempt Attempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@index([attemptId])
+}
+
+model Artifact {
+  id          String       @id @default(cuid())
+  createdAt   DateTime     @default(now())
+  attemptId   String?
+  runId       String?
+  kind        ArtifactKind
+  storageKey  String
+  contentType String
+  sizeBytes   Int
+  label       String?
+  expiresAt   DateTime?
+
+  attempt Attempt? @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  run     Run?     @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([attemptId])
+  @@index([runId])
+  @@index([expiresAt])
+}
+
+model RunEvent {
+  id         String   @id @default(cuid())
+  runId      String
+  shardIndex Int
+  seq        Int
+  type       String
+  ts         DateTime
+  payload    Json
+
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, shardIndex, seq])
+  @@index([runId, seq])
+}
+
+// ─── Insights & integrations ───────────────────────────────────────────────
+
+model TestStat {
+  id             String   @id @default(cuid())
+  computedAt     DateTime @default(now())
+  testCaseId     String
+  projectId      String
+  browser        Browser
+  windowDays     Int
+  runs           Int
+  failures       Int
+  flakes         Int
+  flakeScore     Float
+  p50DurationMs  Int
+  p95DurationMs  Int
+
+  testCase TestCase @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
+  project  Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([testCaseId, browser, windowDays])
+  @@index([projectId, flakeScore(sort: Desc)])
+}
+
+model Integration {
+  id               String          @id @default(cuid())
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  orgId            String
+  projectId        String?
+  type             IntegrationType
+  name             String
+  configCiphertext Bytes
+  events           String[]
+  isEnabled        Boolean         @default(true)
+  consecutiveFailures Int          @default(0)
+
+  org           Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project       Project?       @relation(fields: [projectId], references: [id])
+  notifications Notification[]
+
+  @@index([orgId])
+  @@index([projectId])
+}
+
+model Notification {
+  id            String    @id @default(cuid())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  integrationId String
+  runId         String?
+  status        String
+  attempts      Int       @default(0)
+  lastError     String?   @db.Text
+  sentAt        DateTime?
+
+  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  run         Run?        @relation(fields: [runId], references: [id])
+
+  @@index([integrationId])
+  @@index([runId])
+}
+
+// ─── Side-channel verification (§22.3) ────────────────────────────────────
+
+model CaptureEndpoint {
+  id             String   @id @default(cuid())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  projectId      String
+  name           String
+  slug           String   @unique
+  secret         String?
+  retentionHours Int      @default(72)
+  isEnabled      Boolean  @default(true)
+
+  project Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  events  CaptureEvent[]
+
+  @@index([projectId])
+}
+
+model CaptureEvent {
+  id                 String   @id @default(cuid())
+  createdAt          DateTime @default(now())
+  captureEndpointId  String
+  runId              String?
+  method             String
+  headers            Json
+  body               Json?
+  rawBody            Bytes
+  sourceIp           String?
+  receivedAt         DateTime @default(now())
+
+  captureEndpoint CaptureEndpoint @relation(fields: [captureEndpointId], references: [id], onDelete: Cascade)
+  run             Run?            @relation(fields: [runId], references: [id])
+
+  @@index([captureEndpointId, receivedAt(sort: Desc)])
+  @@index([runId])
+}
+
+// ─── Tasks (§22.4) ────────────────────────────────────────────────────────
+
+model Task {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  projectId     String
+  environmentId String
+  name          String
+  kind          TaskKind @default(CUSTOM)
+  code          String   @db.Text
+  isEnabled     Boolean  @default(true)
+  timeoutMs     Int      @default(120000)
+
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environment Environment @relation(fields: [environmentId], references: [id])
+  schedules   Schedule[]
+
+  @@index([projectId])
+}
+
+// ─── Visual regression baselines (§Phase 6 Part C) ────────────────────────
+
+model VisualBaseline {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  testCaseId String
+  name       String
+  browser    Browser
+  storageKey String
+  approvedAt DateTime?
+  approvedBy String?
+
+  @@unique([testCaseId, name, browser])
+  @@index([testCaseId])
+}
+
+// ─── AI authoring & triage (§8.3 / Phase 5) ───────────────────────────────
+
+model TriageCache {
+  id             String   @id @default(cuid())
+  createdAt      DateTime @default(now())
+  testVersionId  String
+  errorSignature String   // md5(errorName + errorMessage)
+  likelyCause    String   @db.Text
+  confidence     String   // high|medium|low
+  suggestion     String   @db.Text
+  model          String
+  inputTokens    Int
+  outputTokens   Int
+
+  @@unique([testVersionId, errorSignature])
+  @@index([testVersionId])
+}
+
+model AiUsage {
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now())
+  orgId        String
+  operation    String   // generate|triage
+  model        String
+  inputTokens  Int
+  outputTokens Int
+  costUsdMicro Int      // approximate cost in micro-USD
+
+  @@index([orgId, createdAt(sort: Desc)])
+}

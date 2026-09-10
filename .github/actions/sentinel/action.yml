@@ -1,0 +1,72 @@
+name: Sentinel E2E Tests
+description: Run end-to-end tests via Sentinel
+
+inputs:
+  api-key:
+    required: true
+    description: Sentinel API key (store as a GitHub secret)
+  project:
+    required: true
+    description: Project slug in Sentinel
+  environment:
+    required: false
+    description: Environment name (e.g. production, staging)
+    default: production
+  suite:
+    required: false
+    description: Suite ID to run (optional; runs all tests if omitted)
+  browser:
+    required: false
+    description: Comma-separated browsers to run (chromium,firefox,webkit)
+    default: chromium
+  shard-count:
+    required: false
+    description: Number of shards
+    default: '1'
+  wait:
+    required: false
+    description: Wait for run to complete and set exit code
+    default: 'true'
+  reporter:
+    required: false
+    description: Reporter type (list|json|junit)
+    default: junit
+  api-url:
+    required: false
+    description: Sentinel API URL (defaults to SENTINEL_API_URL env var)
+
+runs:
+  using: composite
+  steps:
+    - name: Run Sentinel tests
+      run: |
+        WAIT_FLAG=""
+        if [ "${{ inputs.wait }}" = "true" ]; then
+          WAIT_FLAG="--wait"
+        fi
+
+        SUITE_FLAG=""
+        if [ -n "${{ inputs.suite }}" ]; then
+          SUITE_FLAG="--suite ${{ inputs.suite }}"
+        fi
+
+        npx --yes @sentinel/cli run \
+          --project "${{ inputs.project }}" \
+          --env "${{ inputs.environment }}" \
+          --browser "${{ inputs.browser }}" \
+          --shard-count "${{ inputs.shard-count }}" \
+          --reporter "${{ inputs.reporter }}" \
+          $WAIT_FLAG \
+          $SUITE_FLAG
+      env:
+        SENTINEL_API_KEY: ${{ inputs.api-key }}
+        SENTINEL_API_URL: ${{ inputs.api-url || env.SENTINEL_API_URL }}
+      shell: bash
+
+    - name: Upload JUnit results
+      if: ${{ inputs.reporter == 'junit' && always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: sentinel-junit-results
+        path: sentinel-results.xml
+        if-no-files-found: ignore

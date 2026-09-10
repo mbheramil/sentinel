@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+.next/
+out/
+
+# Environment (NEVER commit real .env files)
+.env
+.env.local
+.env.*.local
+
+# Prisma generated
+packages/db/src/generated/
+
+# Logs
+*.log
+pino*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test outputs
+coverage/
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Turbo cache
+.turbo/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+infra/docker/secrets/

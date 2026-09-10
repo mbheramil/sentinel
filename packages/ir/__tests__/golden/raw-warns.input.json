@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "steps": [
+    {
+      "kind": "raw",
+      "code": "console.log('custom step');"
+    }
+  ]
+}

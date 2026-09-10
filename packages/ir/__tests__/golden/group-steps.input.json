@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "steps": [
+    {
+      "kind": "group",
+      "title": "Open storefront",
+      "steps": [
+        { "kind": "goto", "url": "/", "expectStatus": 200 },
+        {
+          "kind": "expect",
+          "assertion": {
+            "on": { "by": "role", "role": "heading", "name": "Welcome" },
+            "is": "visible"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "group",
+      "title": "Add to cart",
+      "steps": [
+        {
+          "kind": "click",
+          "target": { "by": "role", "role": "button", "name": "Add to cart" }
+        },
+        {
+          "kind": "expect",
+          "assertion": {
+            "on": { "by": "testId", "value": "cart-count" },
+            "is": "text",
+            "expected": { "literal": "1" }
+          }
+        }
+      ]
+    }
+  ]
+}

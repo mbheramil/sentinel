@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "steps": [
+    {
+      "kind": "expect",
+      "assertion": {
+        "on": { "by": "role", "role": "button", "name": "Submit" },
+        "is": "visible"
+      }
+    },
+    {
+      "kind": "expect",
+      "assertion": {
+        "on": { "by": "testId", "value": "error-msg" },
+        "is": "hidden"
+      }
+    },
+    {
+      "kind": "expect",
+      "assertion": {
+        "on": { "by": "label", "value": "Email" },
+        "is": "text",
+        "expected": { "literal": "user@example.com" }
+      }
+    },
+    {
+      "kind": "expect",
+      "assertion": {
+        "on": "page",
+        "is": "url",
+        "expected": { "literal": "/dashboard" }
+      }
+    },
+    {
+      "kind": "expect",
+      "assertion": {
+        "on": "page",
+        "is": "title",
+        "expected": { "literal": "Dashboard" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{{- if .Values.web.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "sentinel.fullname" . }}-web
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "sentinel.web.labels" . | nindent 4 }}
+  annotations:
+    {{- with .Values.web.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- if .Values.web.ingress.className }}
+  ingressClassName: {{ .Values.web.ingress.className }}
+  {{- end }}
+  {{- if .Values.web.ingress.tls }}
+  tls:
+    {{- toYaml .Values.web.ingress.tls | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.web.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "sentinel.fullname" . }}-web
+                port:
+                  name: http
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "sentinel.fullname" . }}-api
+                port:
+                  name: http
+          - path: /internal
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "sentinel.fullname" . }}-api
+                port:
+                  name: http
+          - path: /hooks
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "sentinel.fullname" . }}-api
+                port:
+                  name: http
+{{- end }}

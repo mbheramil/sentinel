@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sentinel.configmap" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "sentinel.labels" . | nindent 4 }}
+data:
+  NODE_ENV: {{ .Values.api.env.NODE_ENV | quote }}
+  API_PORT: {{ .Values.api.env.API_PORT | quote }}
+  RUNNER_MAX_SLOTS: {{ .Values.runner.maxSlots | quote }}
+  SANDBOX_STRATEGY: {{ .Values.runner.sandboxStrategy | quote }}
+  {{- range $key, $value := .Values.api.env }}
+  {{- if and (ne $key "NODE_ENV") (ne $key "API_PORT") }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  {{- end }}

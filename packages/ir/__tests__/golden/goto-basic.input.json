@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "steps": [
+    {
+      "kind": "goto",
+      "url": "/",
+      "expectStatus": 200
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+apiVersion: v2
+name: sentinel
+description: Self-hosted Playwright E2E testing platform
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - playwright
+  - testing
+  - e2e
+  - ci
+home: https://github.com/your-org/sentinel
+sources:
+  - https://github.com/your-org/sentinel
+maintainers:
+  - name: Sentinel Team
