@@ -483,7 +483,9 @@ export const apiClient = {
     if (params?.page !== undefined) qs.set('page', String(params.page));
     if (params?.pageSize !== undefined) qs.set('pageSize', String(params.pageSize));
     const q = qs.toString();
-    return request<RunResponse[]>(`/projects/${projectSlug}/runs${q ? `?${q}` : ''}`);
+    // The API returns { data: RunResponse[], meta: { page, perPage, total } }.
+    return request<{ data: RunResponse[] }>(`/projects/${projectSlug}/runs${q ? `?${q}` : ''}`)
+      .then((r) => r.data);
   },
 
   createRun(projectSlug: string, input: CreateRunInput): Promise<RunResponse> {

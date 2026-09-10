@@ -463,6 +463,73 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  // ── GET /runs/:id/tests ────────────────────────────────────────────────────
+  a.get(
+    '/runs/:id/tests',
+    {
+      schema: {
+        params: z.object({ id: z.string() }),
+        querystring: z.object({
+          status: z.string().optional(),
+        }),
+        response: {
+          200: z.array(
+            z.object({
+              id: z.string(),
+              runId: z.string(),
+              testCaseId: z.string(),
+              browser: z.string(),
+              projectLabel: z.string(),
+              status: z.string(),
+              durationMs: z.number().nullable(),
+              attemptCount: z.number(),
+            }),
+          ),
+          401: ErrorSchema,
+          403: ErrorSchema,
+          404: ErrorSchema,
+        },
+      },
+    },
+    async (req, reply) => {
+      const orgId = await getRunOrgId(req.params.id);
+      if (!orgId) {
+        return reply.status(404).send({ error: { code: ERROR_CODES.NOT_FOUND, message: 'Run not found' } });
+      }
+      const actor = await resolveActor(req, reply, orgId);
+      if (!actor) return;
+
+      const { status } = req.query;
+      const where: Record<string, unknown> = { runId: req.params.id };
+      if (status === 'flaky') {
+        where['status'] = 'FLAKY';
+      } else if (status && status !== 'muted') {
+        where['status'] = status.toUpperCase();
+      }
+
+      const runTests = await prisma.runTest.findMany({
+        where,
+        include: {
+          attempts: { select: { id: true }, orderBy: { index: 'asc' } },
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      return reply.status(200).send(
+        runTests.map((rt) => ({
+          id: rt.id,
+          runId: rt.runId,
+          testCaseId: rt.testCaseId,
+          browser: rt.browser,
+          projectLabel: rt.projectLabel,
+          status: rt.status,
+          durationMs: rt.durationMs,
+          attemptCount: rt.attempts.length,
+        })),
+      );
+    },
+  );
+
   // ── POST /runs/:id/cancel ──────────────────────────────────────────────────
   a.post(
     '/runs/:id/cancel',
