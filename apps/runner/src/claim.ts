@@ -23,7 +23,7 @@ async function apiRequest(
     method,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.RUNNER_TOKEN}`,
+      'x-runner-token': config.RUNNER_TOKEN,
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
