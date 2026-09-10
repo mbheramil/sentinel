@@ -137,8 +137,8 @@ export async function buildServer() {
 async function start() {
   const app = await buildServer();
   try {
-    await app.listen({ port: config.API_PORT, host: '0.0.0.0' });
-    app.log.info(`Sentinel API listening on port ${config.API_PORT}`);
+    await app.listen({ port: config.API_PORT, host: config.API_HOST });
+    app.log.info(`Sentinel API listening on ${config.API_HOST}:${config.API_PORT}`);
     app.log.info(`OpenAPI docs at http://localhost:${config.API_PORT}/docs`);
 
     // Start the orphan-shard reaper

@@ -219,20 +219,25 @@ AUTH_SECRET=${AUTH_SECRET}
 AUTH_TRUST_HOST=true
 NEXTAUTH_URL=${PUBLIC_URL}
 SENTINEL_PUBLIC_URL=${PUBLIC_URL}
-ENCRYPTION_KEY=${ENC_KEY}
+SENTINEL_ENCRYPTION_KEY=${ENC_KEY}
 RUNNER_TOKEN=${RUNNER_TOKEN}
 API_PORT=3001
 API_HOST=127.0.0.1
 WEB_PORT=3000
 CORS_ORIGINS=${PUBLIC_URL}
 S3_ENDPOINT=http://127.0.0.1:9000
-S3_ACCESS_KEY=${MINIO_USER}
-S3_SECRET_KEY=${MINIO_PASS}
+S3_ACCESS_KEY_ID=${MINIO_USER}
+S3_SECRET_ACCESS_KEY=${MINIO_PASS}
 S3_BUCKET=sentinel-artifacts
 S3_REGION=us-east-1
 S3_FORCE_PATH_STYLE=true
 MAIL_FROM=sentinel@sentinel.example
 LOG_LEVEL=info
+# Baked into the browser bundle at build time (step 11), so it must be a URL the
+# *visitor's* browser can reach — not 127.0.0.1. Without it the web app falls back
+# to http://localhost:3001/api/v1 and every client-side fetch hits the visitor's
+# own machine. nginx proxies /api/ to the API, so the public origin is correct.
+NEXT_PUBLIC_API_URL=${PUBLIC_URL}/api/v1
 EOF
 chmod 600 "$APP_DIR/.env"
 # Per-package copies: Prisma and Next both read from their own cwd.

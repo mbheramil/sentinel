@@ -4,6 +4,11 @@ const ConfigSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   API_PORT: z.coerce.number().int().min(1).max(65535).default(3001),
+  // Deployments put the API behind nginx and want it unreachable from the
+  // internet, so they set 127.0.0.1 (see infra/provision.sh). The default stays
+  // 0.0.0.0 because in docker-compose the API must accept connections from other
+  // containers, where binding loopback makes it unreachable.
+  API_HOST: z.string().min(1).default('0.0.0.0'),
   SENTINEL_PUBLIC_URL: z.string().url().default('http://localhost:3000'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
