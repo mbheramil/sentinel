@@ -277,6 +277,11 @@ server {
     add_header X-Content-Type-Options nosniff always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
 
+    # Auth.js v5 mounts its handlers on /api/auth/ inside Next.js — these must
+    # reach port 3000, not the Fastify API on 3001. nginx uses longest-prefix
+    # matching, so this block wins over the /api/ block below.
+    location /api/auth/ { proxy_pass http://127.0.0.1:3000; include /etc/nginx/proxy_params; }
+
     location /api/  { proxy_pass http://127.0.0.1:3001; include /etc/nginx/proxy_params; }
     location /docs  { proxy_pass http://127.0.0.1:3001; include /etc/nginx/proxy_params; }
     location /healthz { proxy_pass http://127.0.0.1:3001; include /etc/nginx/proxy_params; }
