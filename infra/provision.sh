@@ -133,6 +133,11 @@ npm i -g pm2 >/dev/null
 # Corepack asks for confirmation before downloading a pinned version, which would
 # hang forever with no tty.
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+# NB: the version printed here is corepack's shim default, because we are not in
+# the repo yet (it is cloned in step 10). Inside $APP_DIR the shim reads
+# `packageManager: pnpm@9.15.0` from package.json and fetches that instead, which
+# is what matches pnpm-lock.yaml's lockfileVersion 9.0. So a 10.x/12.x here is
+# expected and not the version that installs anything.
 node -v && pnpm -v
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -189,6 +194,11 @@ systemctl enable --now minio >/dev/null
 
 # ─────────────────────────────────────────────────────────────────────────────
 log "10/12  Clone app + generate fresh secrets"
+# Step 10 chowns $APP_DIR to $APP_USER, so on any *re-run* this script is root
+# operating a repo owned by someone else and git refuses with "detected dubious
+# ownership". Declaring it safe is correct here: we own the box, and the only
+# writer is this script.
+git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
 if [[ -d $APP_DIR/.git ]]; then
   git -C "$APP_DIR" pull --ff-only
 else
