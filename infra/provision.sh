@@ -299,8 +299,12 @@ module.exports = {
     {
       name: 'web',
       cwd: '${APP_DIR}/apps/web',
-      script: 'node_modules/.bin/next',
-      args: 'start -p 3000 -H 127.0.0.1',
+      // NOT node_modules/.bin/next — that is a POSIX *shell* wrapper, and pm2
+      // hands its script to node, which chokes on line 2 with
+      // "SyntaxError: missing ) after argument list". Point at the real JS entry,
+      // same shape as the api app above.
+      script: 'node',
+      args: 'node_modules/next/dist/bin/next start -p 3000 -H 127.0.0.1',
       env,
       max_memory_restart: '600M',
     },
@@ -314,12 +318,34 @@ pm2 start "$APP_DIR/ecosystem.config.cjs"
 pm2 save >/dev/null
 pm2 startup systemd -u root --hp /root >/dev/null 2>&1 || true
 
-sleep 10
 log "Verification"
-curl -fsS -o /dev/null -w 'api  /healthz  -> HTTP %{http_code}\n' http://127.0.0.1:3001/healthz || warn "API not responding"
-curl -fsS -o /dev/null -w 'web  /login    -> HTTP %{http_code}\n' http://127.0.0.1:3000/login  || warn "Web not responding"
-curl -fsS -o /dev/null -w 'nginx /login   -> HTTP %{http_code}\n' http://127.0.0.1/login       || warn "Nginx not proxying"
+# Poll rather than sleeping a fixed 10s and hoping: Next takes a while to be ready
+# to serve, and a crash-looping app can look "online" to `pm2 list` for a moment
+# before it dies again.
+check() { # <label> <url>
+  local i
+  for i in $(seq 1 30); do
+    if curl -fsS -o /dev/null --max-time 5 "$2"; then
+      printf '  %-20s -> OK\n' "$1"; return 0
+    fi
+    sleep 2
+  done
+  printf '  %-20s -> FAILED\n' "$1"; return 1
+}
+
+VERIFY_FAILED=0
+check 'api   /healthz' http://127.0.0.1:3001/healthz || VERIFY_FAILED=1
+check 'web   /login'   http://127.0.0.1:3000/login   || VERIFY_FAILED=1
+check 'nginx /login'   http://127.0.0.1/login        || VERIFY_FAILED=1
 pm2 list
+
+# Previously this script printed "provisioned and hardened" unconditionally, so a
+# run where both apps were crash-looping still looked like a success.
+if (( VERIFY_FAILED )); then
+  echo
+  pm2 logs --nostream --lines 40 2>/dev/null || true
+  die "Provisioning completed but the app is NOT serving — see the logs above, and 'pm2 logs'."
+fi
 
 cat <<EOF
 
