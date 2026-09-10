@@ -26,6 +26,23 @@ log()  { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m[warn] %s\033[0m\n' "$*"; }
 die()  { printf '\033[1;31m[fail] %s\033[0m\n' "$*" >&2; exit 1; }
 
+# A brand new droplet is the ONLY thing this script runs on, and a brand new
+# droplet is still finishing cloud-init and its first unattended-upgrades pass —
+# both of which hold the apt lock. So losing the race to them is the normal case,
+# not an edge case, and `apt-get update` dies with "Could not get lock".
+apt_wait() {
+  cloud-init status --wait >/dev/null 2>&1 || true
+  local i
+  for i in $(seq 1 60); do
+    if ! pgrep -x 'apt|apt-get|dpkg|unattended-upgrade' >/dev/null 2>&1; then
+      return 0
+    fi
+    [[ $i -eq 1 ]] && echo "Waiting for an in-progress apt/dpkg run to finish..."
+    sleep 5
+  done
+  warn "apt still busy after 5 minutes — continuing and hoping for the best."
+}
+
 [[ $EUID -eq 0 ]] || die "Run as root."
 trap 'die "Failed at line $LINENO. See the log above."' ERR
 
@@ -42,6 +59,7 @@ echo "Found $(grep -cE '^(ssh-|ecdsa-)' "$KEYS_FILE") SSH key(s) — safe to con
 # ─────────────────────────────────────────────────────────────────────────────
 log "2/12  Base packages + automatic security updates"
 export DEBIAN_FRONTEND=noninteractive
+apt_wait
 apt-get update -qq
 apt-get install -y -qq \
   curl git ufw fail2ban unattended-upgrades gnupg ca-certificates \
@@ -102,6 +120,7 @@ free -h
 log "6/12  Node ${NODE_MAJOR} + pnpm + pm2"
 if ! command -v node >/dev/null || [[ "$(node -v)" != v${NODE_MAJOR}* ]]; then
   curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - >/dev/null
+  apt_wait
   apt-get install -y -qq nodejs >/dev/null
 fi
 corepack enable >/dev/null 2>&1 || npm i -g corepack >/dev/null
