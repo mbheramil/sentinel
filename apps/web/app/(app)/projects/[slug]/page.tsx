@@ -153,16 +153,7 @@ export default function ProjectPage({ params }: Props) {
         {TAB_LINKS.map((tab) => {
           const Icon = tab.icon;
           const href = `/projects/${slug}/${tab.href}`;
-          return tab.disabled ? (
-            <span
-              key={tab.href}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-muted-foreground/50 cursor-not-allowed select-none"
-              aria-disabled="true"
-            >
-              <Icon className="h-4 w-4" aria-hidden="true" />
-              {tab.label}
-            </span>
-          ) : (
+          return (
             <Link
               key={tab.href}
               href={href}
