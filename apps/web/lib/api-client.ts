@@ -520,7 +520,10 @@ export const apiClient = {
   },
 
   cancelRun(runId: string): Promise<{ ok: boolean }> {
-    return request<{ ok: boolean }>(`/runs/${runId}/cancel`, { method: 'POST' });
+    return request<{ ok: boolean }>(`/runs/${runId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
   },
 
   getRunShards(runId: string): Promise<RunShardResponse[]> {

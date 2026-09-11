@@ -247,7 +247,20 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
 
       authorize(actor, 'projects:delete');
 
-      await prisma.project.delete({ where: { id: project.id } });
+      // The FK chain RunTest→TestCase isn't a cascade in the schema, so a
+      // simple project.delete() fails with P2003. Delete in dependency order.
+      await prisma.$transaction([
+        // RunTest rows reference both Run and TestCase; delete them first.
+        prisma.runTest.deleteMany({
+          where: { run: { projectId: project.id } },
+        }),
+        // Now runs and testCases can be deleted safely.
+        prisma.run.deleteMany({ where: { projectId: project.id } }),
+        prisma.testCase.deleteMany({ where: { projectId: project.id } }),
+        prisma.environment.deleteMany({ where: { projectId: project.id } }),
+        prisma.schedule.deleteMany({ where: { projectId: project.id } }),
+        prisma.project.delete({ where: { id: project.id } }),
+      ]);
       return reply.status(200).send({ ok: true });
     },
   );

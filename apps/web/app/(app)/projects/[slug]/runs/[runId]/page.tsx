@@ -118,6 +118,7 @@ export default function RunDetailPage({ params }: Props) {
   const cancelMutation = useMutation({
     mutationFn: () => apiClient.cancelRun(runId),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['run', runId] }),
+    onError: (err) => alert(`Cancel failed: ${err instanceof Error ? err.message : 'unknown error'}`),
   });
 
   const retryMutation = useMutation({
@@ -125,7 +126,9 @@ export default function RunDetailPage({ params }: Props) {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['run', runId] });
       void qc.invalidateQueries({ queryKey: ['run-tests', runId] });
+      void qc.invalidateQueries({ queryKey: ['runs', slug] });
     },
+    onError: (err) => alert(`Retry failed: ${err instanceof Error ? err.message : 'unknown error'}`),
   });
 
   if (isLoading) {
