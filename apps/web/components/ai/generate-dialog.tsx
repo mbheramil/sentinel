@@ -132,7 +132,22 @@ export function GenerateDialog({ open, onClose, onSave, existingCode = '' }: Gen
 
   const handleCopy = useCallback(() => {
     if (!result?.code) return;
-    void navigator.clipboard.writeText(result.code).then(() => {
+    // navigator.clipboard requires HTTPS; fall back to execCommand on plain HTTP
+    const copy = (text: string) => {
+      if (navigator.clipboard) {
+        return navigator.clipboard.writeText(text);
+      }
+      const el = document.createElement('textarea');
+      el.value = text;
+      el.style.position = 'fixed';
+      el.style.opacity = '0';
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      return Promise.resolve();
+    };
+    void copy(result.code).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
@@ -313,10 +328,11 @@ export function GenerateDialog({ open, onClose, onSave, existingCode = '' }: Gen
               {/* Step list preview */}
               <StepList ir={result.stepsIr} />
 
-              {/* Diff view */}
+              {/* Code preview */}
               <div className="space-y-1.5">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Code diff (left: current, right: generated)
+                  Generated code
+                  {existingCode && <span className="ml-2 font-normal normal-case">(red = current editor, green = new)</span>}
                 </p>
                 <div className="rounded-md overflow-hidden border border-border">
                   <MonacoDiffEditor
@@ -328,7 +344,7 @@ export function GenerateDialog({ open, onClose, onSave, existingCode = '' }: Gen
                     options={{
                       readOnly: true,
                       minimap: { enabled: false },
-                      renderSideBySide: true,
+                      renderSideBySide: false,
                       scrollBeyondLastLine: false,
                       fontSize: 12,
                     }}
