@@ -139,7 +139,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
         });
       } catch (err) {
         const e = err as Error & { statusCode?: number };
-        const status = e.statusCode ?? 502;
+        const status = (e.statusCode === 400 || e.statusCode === 402 || e.statusCode === 429 ? e.statusCode : 502) as 400 | 402 | 429 | 502;
         return reply.status(status).send({
           error: { code: 'AI_ERROR', message: e.message ?? 'AI generation failed' },
         });
