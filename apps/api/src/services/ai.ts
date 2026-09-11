@@ -146,13 +146,15 @@ function assertSafeUrl(raw: string): URL {
 async function extractWithPlaywright(url: string): Promise<string> {
   // Use the globally installed Playwright to render the page with JavaScript
   // so JS-rendered forms (Elementor, CF7, Gravity Forms, etc.) are visible.
-  const { chromium } = await import('@playwright/test');
+  // The API runs under tsx (CJS interop) so require() reaches the global install.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+  const { chromium } = require('@playwright/test') as typeof import('@playwright/test');
   const browser = await chromium.launch({ headless: true });
   try {
     const ctx = await browser.newContext({ userAgent: 'Sentinel-TestGen/1.0' });
     const page = await ctx.newPage();
     await page.goto(url, { timeout: 15_000, waitUntil: 'domcontentloaded' });
-    // Wait a moment for JS-rendered forms to appear
+    // Give JS-rendered forms (CF7, Elementor, Gravity Forms) time to appear
     await page.waitForTimeout(2000);
     return await page.content();
   } finally {
