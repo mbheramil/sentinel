@@ -160,44 +160,40 @@ async function extractWithPlaywright(url: string): Promise<string> {
     await (page as any).waitForTimeout(2500);
 
     // Introspect every form field directly from the live rendered DOM
+    // The callback runs in the browser — no TypeScript DOM types available in Node ctx
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return await (page as any).evaluate((pageUrl: string) => {
+      /* eslint-disable @typescript-eslint/no-explicit-any */
       const lines: string[] = [
         `=== LIVE FORM ANALYSIS for ${pageUrl} ===`,
         'Use EXACT label text below in getByLabel(). Do not paraphrase.',
         '',
       ];
 
-      document.querySelectorAll('input, select, textarea').forEach((el) => {
-        const input = el as HTMLInputElement | HTMLSelectElement;
-        const type = (input as HTMLInputElement).type || 'text';
+      (document as any).querySelectorAll('input, select, textarea').forEach((el: any) => {
+        const type: string = el.type || (el.tagName === 'SELECT' ? 'select' : 'textarea');
         if (['hidden', 'submit', 'reset', 'button', 'image'].includes(type)) return;
 
-        // Resolve the label
         let label = '';
-        if (input.id) {
-          const lbl = document.querySelector(`label[for="${CSS.escape(input.id)}"]`);
+        if (el.id) {
+          const lbl = (document as any).querySelector(`label[for="${el.id}"]`);
           if (lbl) label = (lbl.textContent || '').replace(/\s+/g, ' ').replace(/[*✱]\s*$/, '').trim();
         }
         if (!label) {
-          const wrap = input.closest('label');
+          const wrap = el.closest('label');
           if (wrap) {
-            const clone = wrap.cloneNode(true) as HTMLElement;
-            clone.querySelectorAll('input,select,textarea').forEach((c) => c.remove());
+            const clone = wrap.cloneNode(true);
+            clone.querySelectorAll('input,select,textarea').forEach((c: any) => c.remove());
             label = (clone.textContent || '').replace(/\s+/g, ' ').replace(/[*✱]\s*$/, '').trim();
           }
         }
-        if (!label) label = input.getAttribute('aria-label') || '';
-        const placeholder = (input as HTMLInputElement).placeholder || '';
+        if (!label) label = el.getAttribute('aria-label') || '';
+        const placeholder: string = el.placeholder || '';
 
-        if (type === 'file') {
-          lines.push(`  FIELD (skip — file upload): label="${label}"`);
-          return;
-        }
+        if (type === 'file') { lines.push(`  FIELD (skip — file upload): label="${label}"`); return; }
 
         if (el.tagName === 'SELECT') {
-          const opts = [...(el as HTMLSelectElement).options]
-            .map((o) => o.text.trim()).filter((t) => t.length > 0 && t !== '—');
+          const opts = [...el.options].map((o: any) => o.text.trim()).filter((t: string) => t && t !== '—');
           lines.push(`  FIELD: type=select  label="${label}"  options: [${opts.slice(0, 10).join(' | ')}]`);
           return;
         }
@@ -205,26 +201,20 @@ async function extractWithPlaywright(url: string): Promise<string> {
         lines.push(`  FIELD: type=${type}  label="${label}"${placeholder ? `  placeholder="${placeholder}"` : ''}`);
       });
 
-      // Submit button
-      const btn = document.querySelector<HTMLElement>('button[type="submit"], input[type="submit"]');
+      const btn: any = (document as any).querySelector('button[type="submit"], input[type="submit"]');
       if (btn) {
-        const t = (btn.textContent || (btn as HTMLInputElement).value || '').trim();
-        lines.push('');
-        lines.push(`  SUBMIT BUTTON text: "${t}" — use getByRole('button', { name: '${t}' }) or getByRole('button', { name: /${t}/i })`);
+        const t: string = (btn.textContent || btn.value || '').trim();
+        lines.push('', `  SUBMIT BUTTON: "${t}"`);
       }
 
-      // CAPTCHA
-      const captcha = document.querySelector('.g-recaptcha, .h-captcha, iframe[title*="reCAPTCHA"], [class*="captcha"]');
+      const captcha: any = (document as any).querySelector('.g-recaptcha,.h-captcha,iframe[title*="reCAPTCHA"],[class*="captcha"]');
       if (captcha) {
-        lines.push('');
-        lines.push('  CAPTCHA_PRESENT — the submit button stays DISABLED until CAPTCHA is solved.');
-        lines.push('  DO NOT assert toBeEnabled() on the submit button.');
-        lines.push('  Instead verify: await expect(page.locator(\'.g-recaptcha\')).toBeVisible();');
+        lines.push('', '  CAPTCHA_PRESENT — submit stays DISABLED; do NOT assert toBeEnabled().', '  Assert instead: await expect(page.locator(\'.g-recaptcha\')).toBeVisible();');
       }
 
-      lines.push('');
-      lines.push('=== END ===');
+      lines.push('', '=== END ===');
       return lines.join('\n');
+      /* eslint-enable @typescript-eslint/no-explicit-any */
     }, url);
   } finally {
     await browser.close();
