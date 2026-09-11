@@ -11,7 +11,7 @@ import AnthropicBedrock from '@anthropic-ai/bedrock-sdk';
 import OpenAI from 'openai';
 import { createHash } from 'node:crypto';
 import { prisma } from '@sentinel/db';
-import { StepIrSchema, compile } from '@sentinel/ir';
+import { compile as _compile, StepIrSchema as _StepIrSchema } from '@sentinel/ir';
 import type { StepIr } from '@sentinel/ir';
 import { config } from '../config.js';
 
@@ -237,7 +237,7 @@ async function extractAccessibilityTree(rawUrl: string, maxChars = 32_000): Prom
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 
-const STEP_IR_SCHEMA_SUMMARY = `
+const _STEP_IR_SCHEMA_SUMMARY = `
 Step IR schema (version: 1):
 Root: { "version": 1, "steps": [Step] }
 
