@@ -144,21 +144,88 @@ function assertSafeUrl(raw: string): URL {
 // ── Accessibility-tree extraction ─────────────────────────────────────────────
 
 async function extractWithPlaywright(url: string): Promise<string> {
-  // Use the globally installed Playwright to render the page with JavaScript
-  // so JS-rendered forms (Elementor, CF7, Gravity Forms, etc.) are visible.
-  // The API runs under tsx (CJS interop) so createRequire reaches the global install.
+  // Launch a real browser and introspect the live DOM for exact form structure.
   const { createRequire } = await import('node:module');
   const req = createRequire(import.meta.url);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { chromium } = req('@playwright/test') as any;
-  const browser = await chromium.launch({ headless: true });
+  const pw = req('@playwright/test') as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const browser = await (pw.chromium as any).launch({ headless: true });
   try {
-    const ctx = await browser.newContext({ userAgent: 'Sentinel-TestGen/1.0' });
-    const page = await ctx.newPage();
-    await page.goto(url, { timeout: 15_000, waitUntil: 'domcontentloaded' });
-    // Give JS-rendered forms (CF7, Elementor, Gravity Forms) time to appear
-    await page.waitForTimeout(2000);
-    return await page.content();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const page = await (await (browser as any).newContext()).newPage();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (page as any).goto(url, { timeout: 15_000, waitUntil: 'domcontentloaded' });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (page as any).waitForTimeout(2500);
+
+    // Introspect every form field directly from the live rendered DOM
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return await (page as any).evaluate((pageUrl: string) => {
+      const lines: string[] = [
+        `=== LIVE FORM ANALYSIS for ${pageUrl} ===`,
+        'Use EXACT label text below in getByLabel(). Do not paraphrase.',
+        '',
+      ];
+
+      document.querySelectorAll('input, select, textarea').forEach((el) => {
+        const input = el as HTMLInputElement | HTMLSelectElement;
+        const type = (input as HTMLInputElement).type || 'text';
+        if (['hidden', 'submit', 'reset', 'button', 'image'].includes(type)) return;
+
+        // Resolve the label
+        let label = '';
+        if (input.id) {
+          const lbl = document.querySelector(`label[for="${CSS.escape(input.id)}"]`);
+          if (lbl) label = (lbl.textContent || '').replace(/\s+/g, ' ').replace(/[*✱]\s*$/, '').trim();
+        }
+        if (!label) {
+          const wrap = input.closest('label');
+          if (wrap) {
+            const clone = wrap.cloneNode(true) as HTMLElement;
+            clone.querySelectorAll('input,select,textarea').forEach((c) => c.remove());
+            label = (clone.textContent || '').replace(/\s+/g, ' ').replace(/[*✱]\s*$/, '').trim();
+          }
+        }
+        if (!label) label = input.getAttribute('aria-label') || '';
+        const placeholder = (input as HTMLInputElement).placeholder || '';
+
+        if (type === 'file') {
+          lines.push(`  FIELD (skip — file upload): label="${label}"`);
+          return;
+        }
+
+        if (el.tagName === 'SELECT') {
+          const opts = [...(el as HTMLSelectElement).options]
+            .map((o) => o.text.trim()).filter((t) => t.length > 0 && t !== '—');
+          lines.push(`  FIELD: type=select  label="${label}"  options: [${opts.slice(0, 10).join(' | ')}]`);
+          return;
+        }
+
+        lines.push(`  FIELD: type=${type}  label="${label}"${placeholder ? `  placeholder="${placeholder}"` : ''}`);
+      });
+
+      // Submit button
+      const btn = document.querySelector<HTMLElement>('button[type="submit"], input[type="submit"]');
+      if (btn) {
+        const t = (btn.textContent || (btn as HTMLInputElement).value || '').trim();
+        lines.push('');
+        lines.push(`  SUBMIT BUTTON text: "${t}" — use getByRole('button', { name: '${t}' }) or getByRole('button', { name: /${t}/i })`);
+      }
+
+      // CAPTCHA
+      const captcha = document.querySelector('.g-recaptcha, .h-captcha, iframe[title*="reCAPTCHA"], [class*="captcha"]');
+      if (captcha) {
+        lines.push('');
+        lines.push('  CAPTCHA_PRESENT — the submit button stays DISABLED until CAPTCHA is solved.');
+        lines.push('  DO NOT assert toBeEnabled() on the submit button.');
+        lines.push('  Instead verify: await expect(page.locator(\'.g-recaptcha\')).toBeVisible();');
+      }
+
+      lines.push('');
+      lines.push('=== END ===');
+      return lines.join('\n');
+    }, url);
   } finally {
     await browser.close();
   }
@@ -167,107 +234,15 @@ async function extractWithPlaywright(url: string): Promise<string> {
 async function extractAccessibilityTree(rawUrl: string, maxChars = 32_000): Promise<string> {
   const parsed = assertSafeUrl(rawUrl);
 
-  // Try Playwright first (renders JS); fall back to plain fetch if unavailable
-  let html: string;
+  // Playwright introspects the live rendered DOM and returns structured form data.
+  // If Playwright is unavailable fall back to a basic plain-text fetch.
   try {
-    html = await extractWithPlaywright(parsed.href);
+    const result = await extractWithPlaywright(parsed.href);
+    return result.length > maxChars ? result.slice(0, maxChars) + '\n... (truncated)' : result;
   } catch {
-    // Fallback: plain fetch (no JS rendering)
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12_000);
-    try {
-      const res = await fetch(parsed.href, {
-        signal: controller.signal,
-        headers: { 'User-Agent': 'Sentinel-TestGen/1.0', Accept: 'text/html' },
-        redirect: 'follow',
-      });
-      html = await res.text();
-    } finally {
-      clearTimeout(timer);
-    }
+    // Minimal fallback: just return a message so the AI knows the fetch failed
+    return `Could not render ${parsed.href} — please describe the form fields in your prompt.`;
   }
-
-  // Strip scripts and styles to reduce noise
-  html = html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '');
-
-  // ── FORM SUMMARY (shown first so AI sees it before any noise) ────────────────
-  // Build a structured list of form fields with their exact labels.
-  // This is the primary data the AI must use — do not paraphrase these strings.
-  const formLines: string[] = ['=== FORM FIELDS (use EXACT text below for getByLabel/getByPlaceholder) ==='];
-
-  // Map input id → placeholder for cross-referencing with labels
-  const idToPlaceholder = new Map<string, string>();
-  const idToType = new Map<string, string>();
-  for (const m of html.matchAll(/<input([^>]*)>/gi)) {
-    const attrs = m[1]!;
-    const id = attrs.match(/\bid="([^"]+)"/i)?.[1] ?? '';
-    const placeholder = attrs.match(/placeholder="([^"]+)"/i)?.[1] ?? '';
-    const type = attrs.match(/type="([^"]+)"/i)?.[1] ?? 'text';
-    if (id) { idToPlaceholder.set(id, placeholder); idToType.set(id, type); }
-  }
-
-  // Labels paired with their fields
-  const seenLabels = new Set<string>();
-  for (const m of html.matchAll(/<label([^>]*)>([\s\S]*?)<\/label>/gi)) {
-    const rawText = m[2]!.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-    // Strip trailing asterisk (required marker) for clean label text
-    const labelText = rawText.replace(/\s*\*\s*$/, '').trim();
-    if (!labelText || seenLabels.has(labelText)) continue;
-    seenLabels.add(labelText);
-    const forId = m[1]!.match(/for="([^"]+)"/i)?.[1] ?? '';
-    const placeholder = forId ? (idToPlaceholder.get(forId) ?? '') : '';
-    const type = forId ? (idToType.get(forId) ?? 'text') : 'text';
-    const info = [
-      `label: "${labelText}"`,
-      type !== 'text' ? `type=${type}` : '',
-      placeholder ? `placeholder="${placeholder}"` : '',
-    ].filter(Boolean).join('  ');
-    formLines.push(`  ${info}`);
-  }
-
-  // Selects with options
-  for (const m of html.matchAll(/<select([^>]*)>([\s\S]*?)<\/select>/gi)) {
-    const id = m[1]!.match(/\bid="([^"]+)"/i)?.[1] ?? '';
-    const options = [...(m[2]!).matchAll(/<option[^>]*value="([^"]+)"[^>]*>([\s\S]*?)<\/option>/gi)]
-      .map(o => o[2]!.replace(/<[^>]+>/g, '').trim())
-      .filter(Boolean)
-      .slice(0, 8);
-    if (id && options.length) formLines.push(`  select id="${id}" options: ${options.join(', ')}`);
-  }
-
-  // Textareas with placeholders
-  for (const m of html.matchAll(/<textarea([^>]*)>/gi)) {
-    const placeholder = m[1]!.match(/placeholder="([^"]+)"/i)?.[1] ?? '';
-    if (placeholder) formLines.push(`  textarea  placeholder="${placeholder}"`);
-  }
-
-  // Submit buttons
-  for (const m of html.matchAll(/<(button|input)[^>]*type="submit"[^>]*>/gi)) {
-    const val = m[0].match(/value="([^"]+)"/i)?.[1] ?? '';
-    const text = m[0].match(/>[^<]*/)?.[0]?.replace('>', '').trim() ?? '';
-    const label = val || text;
-    if (label) formLines.push(`  submit button: "${label}"`);
-  }
-
-  // CAPTCHA detection — if present, do NOT assert submit button isEnabled()
-  const hasCaptcha = /g-recaptcha|h-captcha|recaptcha|hcaptcha|turnstile/i.test(html);
-  if (hasCaptcha) formLines.push(`  CAPTCHA_PRESENT: reCAPTCHA detected — submit button stays disabled; do not assert toBeEnabled()`);
-
-  formLines.push('=== END FORM FIELDS ===');
-
-  // ── Other page elements (secondary context) ──────────────────────────────────
-  const otherLines: string[] = [];
-  const pushOther = (line: string) => { if (otherLines.length < 200) otherLines.push(line.trim()); };
-
-  for (const m of html.matchAll(/<h([1-3])[^>]*>([\s\S]*?)<\/h\1>/gi)) {
-    const text = m[2]!.replace(/<[^>]+>/g, '').trim();
-    if (text) pushOther(`heading: "${text}"`);
-  }
-
-  const result = [...formLines, '', ...otherLines].join('\n');
-  return result.length > maxChars ? result.slice(0, maxChars) + '\n... (truncated)' : result;
 }
 
 // ── System prompt ─────────────────────────────────────────────────────────────
