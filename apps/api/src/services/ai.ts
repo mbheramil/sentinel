@@ -245,11 +245,17 @@ async function extractAccessibilityTree(rawUrl: string, maxChars = 32_000): Prom
     push(`select${name ? ` name="${name}"` : ''}${ariaLabel ? ` aria-label="${ariaLabel}"` : ''}`);
   }
 
-  // Labels
-  for (const m of html.matchAll(/<label[^>]*>([\s\S]*?)<\/label>/gi)) {
-    const text = m[1]!.replace(/<[^>]+>/g, '').trim();
-    if (text) push(`label: "${text}"`);
+  // Labels — with their associated input id so we know which field each label belongs to
+  for (const m of html.matchAll(/<label([^>]*)>([\s\S]*?)<\/label>/gi)) {
+    const text = m[2]!.replace(/<[^>]+>/g, '').trim().replace(/\s+/g, ' ');
+    const forAttr = m[1]!.match(/for="([^"]+)"/i)?.[1] ?? '';
+    if (text) push(`label${forAttr ? ` for="${forAttr}"` : ''}: "${text}"`);
   }
+
+  // CAPTCHA detection — critical: affects whether submit button can be asserted enabled
+  const hasCaptcha =
+    /g-recaptcha|h-captcha|recaptcha|hcaptcha|turnstile/i.test(html);
+  if (hasCaptcha) push(`CAPTCHA_PRESENT: reCAPTCHA or hCaptcha detected on this page`);
 
   // Main landmarks
   for (const m of html.matchAll(/<(main|nav|header|footer|section|article)[^>]*aria-label="([^"]+)"/gi)) {
@@ -313,15 +319,18 @@ TEST SIGNATURE (always use exactly this — no extra fixtures):
 RULES:
 1. Use RELATIVE paths in page.goto() — e.g. page.goto('/') or page.goto('/contact/')
    The baseURL is already set to the target site.
-2. EXACT TEXT ONLY — when an accessibility tree is provided, use label/placeholder/button
-   text EXACTLY as it appears. Do NOT paraphrase. "Contact Number" must stay
-   "Contact Number", never "Phone". Wrong text = test timeout.
+2. EXACT TEXT ONLY — copy label/placeholder/button text CHARACTER FOR CHARACTER from the
+   accessibility tree. "Contact Number" stays "Contact Number", never "Phone".
+   "Order details" stays "Order details", never "Message". Wrong text = timeout.
 3. Prefer getByLabel (exact label text), then getByPlaceholder, then getByRole.
-   Fall back to page.locator('input[name="..."]') only when no label/placeholder exists.
-4. After filling a form, assert the submit button is enabled. Do NOT click submit
-   unless the user explicitly asks to submit.
-5. Add expect() assertions to verify key states.
-6. Keep the test focused on ONE specific behaviour.
+   Use page.locator('[name="..."]') only when no label/placeholder exists.
+4. CAPTCHA rule — if the tree contains CAPTCHA_PRESENT:
+   - Fill the form fields and verify with toHaveValue()
+   - Do NOT assert the submit button is enabled (CAPTCHA keeps it disabled)
+   - Just assert page.locator('.g-recaptcha, iframe[title*="reCAPTCHA"]').toBeVisible()
+5. Do NOT click submit unless the user explicitly asks.
+6. After filling each field, add expect(field).toHaveValue('...') to confirm it worked.
+7. Keep the test focused on ONE specific behaviour.
 
 RESPONSE FORMAT (output ONLY this JSON — no prose, no markdown code blocks):
 {
