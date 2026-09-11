@@ -188,16 +188,17 @@ async function extractWithPlaywright(url: string): Promise<string> {
         var placeholder = el.placeholder || '';
         var name = el.name || '';
         var elId = el.id || '';
-        // Recommend the most specific selector to avoid strict mode violations
-        // CF7 wraps inputs in <span aria-label="..."> causing getByLabel() to match 2 elements
+        var maxLen = el.getAttribute('maxlength') || '';
         var bestSelector = name ? 'input[name="'+name+'"]' : (elId ? '#'+elId : (placeholder ? 'getByPlaceholder("'+placeholder+'")' : 'getByLabel("'+label+'")'));
+        // tel/email fields in CF7 may be cleared by JS after fill() — flag them to use pressSequentially
+        var fillHint = (type==='tel'||type==='email') ? '  USE-pressSequentially({delay:50})' : '';
         if (type === 'file') { lines.push('  FIELD (skip-file): label="'+label+'"'); return; }
         if (el.tagName === 'SELECT') {
           var opts = Array.from(el.options).map(function(o){return o.text.trim();}).filter(function(t){return t && t!=='—';});
           lines.push('  FIELD: type=select  label="'+label+'"  selector='+bestSelector+'  options: ['+opts.slice(0,10).join(' | ')+']');
           return;
         }
-        lines.push('  FIELD: type='+type+'  label="'+label+'"'+(placeholder?'  placeholder="'+placeholder+'"':'')+('  selector='+bestSelector));
+        lines.push('  FIELD: type='+type+'  label="'+label+'"'+(placeholder?'  placeholder="'+placeholder+'"':'')+('  selector='+bestSelector)+(maxLen?'  maxlength='+maxLen:'')+fillHint);
       });
       var btn = document.querySelector('button[type="submit"], input[type="submit"]');
       if (btn) { var t=(btn.textContent||btn.value||'').trim(); lines.push('','  SUBMIT BUTTON: "'+t+'"'); }
@@ -308,9 +309,16 @@ RULES:
    accessibility tree. "Contact Number" stays "Contact Number", never "Phone".
    "Order details" stays "Order details", never "Message". Wrong text = timeout.
 3. Use the SELECTOR from each FIELD line — it is pre-computed to avoid ambiguity.
-   e.g. if the field shows  selector=input[name="FirstName"]  use page.locator('input[name="FirstName"]')
-   CF7 and Elementor wrap inputs in <span aria-label="..."> so getByLabel() matches 2 elements and
-   causes a strict mode violation. The selector field uses input[name] or #id to target only the input.
+   e.g. selector=input[name="FirstName"]  → page.locator('input[name="FirstName"]')
+   CF7 and Elementor wrap inputs in <span aria-label="..."> so getByLabel() matches 2 elements.
+
+   MAXLENGTH: if a field shows maxlength=10, your test value must be ≤ 10 characters.
+   e.g. maxlength=10 → use '1234567890' NOT '123-456-7890' (dashes add 2 chars).
+
+   USE-pressSequentially: if a field is flagged USE-pressSequentially({delay:50}), use
+     await page.locator(selector).click();
+     await page.locator(selector).pressSequentially('value', { delay: 50 });
+   This simulates real typing so CF7 JS validation doesn't clear the field.
 4. CAPTCHA rule — if the tree contains CAPTCHA_PRESENT:
    - Use the CAPTCHA BYPASS PATTERN above (bypassCaptcha fixture)
    - Call await bypassCaptcha(page) BEFORE page.goto()
