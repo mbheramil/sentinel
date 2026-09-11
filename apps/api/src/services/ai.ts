@@ -282,15 +282,17 @@ const GENERATE_SYSTEM_PROMPT = `You are an expert Playwright test author. Genera
 ${STEP_IR_SCHEMA_SUMMARY}
 
 RULES:
-1. Prefer role-based locators (by:"role") over css/xpath.
-2. Use by:"label" for form inputs linked to a <label>.
-3. Always start with a goto step. Use a RELATIVE path like "/" or "/contact/" — NOT the full URL.
+1. ONLY use step kinds from the schema above. NEVER invent new kinds like "verify", "navigate",
+   "assert", "input", "submit", "check_title", etc. Invalid kinds cause a hard error.
+2. Prefer role-based locators (by:"role") over css/xpath.
+3. Use by:"label" for form inputs linked to a <label>.
+4. Always start with a goto step. Use a RELATIVE path like "/" or "/contact/" — NOT the full URL.
    The environment's baseURL is already set to the site domain.
-4. Use group steps to organise related actions (e.g. "Fill form", "Verify result").
-5. Add expect steps to verify important state after interactions.
-6. Keep secrets out of literal values — use { "secret": "..." } instead.
-7. The test function signature is: async ({ page, vars, secrets, run }) — do NOT add "capture".
-8. Do NOT include a submit/click-submit step unless the user explicitly says to submit.
+5. Use group steps to organise related actions (e.g. "Fill form", "Verify result").
+6. Add expect steps to verify important state after interactions.
+7. Keep secrets out of literal values — use { "secret": "..." } instead.
+8. The test function signature is: async ({ page, vars, secrets, run }) — do NOT add "capture".
+9. Do NOT include a submit/click-submit step unless the user explicitly says to submit.
    For form tests: fill fields and assert the submit button is enabled, then stop.
 
 RESPONSE FORMAT (output ONLY this JSON, no prose, no code blocks):

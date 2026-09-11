@@ -129,12 +129,21 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
       // Rate limit: 10 generate calls / hour / org
       await checkGenerateRateLimit(orgId);
 
-      const result = await generateTest({
-        prompt: req.body.prompt,
-        url: req.body.url,
-        orgId,
-        deepMode: req.body.deepMode ?? false,
-      });
+      let result;
+      try {
+        result = await generateTest({
+          prompt: req.body.prompt,
+          url: req.body.url,
+          orgId,
+          deepMode: req.body.deepMode ?? false,
+        });
+      } catch (err) {
+        const e = err as Error & { statusCode?: number };
+        const status = e.statusCode ?? 502;
+        return reply.status(status).send({
+          error: { code: 'AI_ERROR', message: e.message ?? 'AI generation failed' },
+        });
+      }
 
       await recordAiUsage({
         orgId,
