@@ -162,7 +162,6 @@ async function extractWithPlaywright(url: string): Promise<string> {
     // Introspect every form field directly from the live rendered DOM
     // Pass browser code as a string so TypeScript doesn't type-check DOM APIs.
     // This code runs inside Chromium, not Node.js.
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval, @typescript-eslint/no-unsafe-function-type
     const browserFn = new Function('pageUrl', `
       var lines = [
         '=== LIVE FORM ANALYSIS for ' + pageUrl + ' ===',
