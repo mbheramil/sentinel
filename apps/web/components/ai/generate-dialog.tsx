@@ -9,8 +9,9 @@ import {
   XIcon,
   ChevronDownIcon,
   ChevronUpIcon,
-  AlertTriangleIcon,
   CheckCircle2Icon,
+  CopyIcon,
+  CheckIcon,
 } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { apiClient, type GenerateTestResponse, SentinelApiError } from '@/lib/api-client';
@@ -127,6 +128,15 @@ export function GenerateDialog({ open, onClose, onSave, existingCode = '' }: Gen
   const [deepMode, setDeepMode] = useState(false);
   const [result, setResult] = useState<GenerateTestResponse | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    if (!result?.code) return;
+    void navigator.clipboard.writeText(result.code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [result]);
 
   const generateMutation = useMutation({
     mutationFn: () =>
@@ -190,16 +200,7 @@ export function GenerateDialog({ open, onClose, onSave, existingCode = '' }: Gen
             </Dialog.Close>
           </div>
 
-          {/* Warning banner */}
-          <div
-            role="note"
-            className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/20 px-3 py-2 text-sm text-amber-700 dark:text-amber-400"
-          >
-            <AlertTriangleIcon className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
-            <p id="generate-dialog-desc">
-              AI-generated tests should be reviewed before running in production.
-            </p>
-          </div>
+          <p id="generate-dialog-desc" className="sr-only">AI test generator dialog</p>
 
           {/* Form (hidden once result is shown) */}
           {!result && (
@@ -338,12 +339,21 @@ export function GenerateDialog({ open, onClose, onSave, existingCode = '' }: Gen
               {/* Actions */}
               <div className="flex items-center justify-between pt-1">
                 <Button variant="outline" size="sm" onClick={handleDiscard}>
-                  Discard — try again
+                  Try again
                 </Button>
-                <Button size="sm" onClick={handleSave}>
-                  <SaveIconInline />
-                  Save as draft
-                </Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={handleCopy}>
+                    {copied ? (
+                      <><CheckIcon className="h-3.5 w-3.5 text-green-500" /> Copied</>
+                    ) : (
+                      <><CopyIcon className="h-3.5 w-3.5" /> Copy code</>
+                    )}
+                  </Button>
+                  <Button size="sm" onClick={handleSave}>
+                    <SaveIconInline />
+                    Add to editor
+                  </Button>
+                </div>
               </div>
             </div>
           )}
