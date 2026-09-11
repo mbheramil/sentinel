@@ -186,13 +186,18 @@ async function extractWithPlaywright(url: string): Promise<string> {
         }
         if (!label) label = el.getAttribute('aria-label') || '';
         var placeholder = el.placeholder || '';
+        var name = el.name || '';
+        var elId = el.id || '';
+        // Recommend the most specific selector to avoid strict mode violations
+        // CF7 wraps inputs in <span aria-label="..."> causing getByLabel() to match 2 elements
+        var bestSelector = name ? 'input[name="'+name+'"]' : (elId ? '#'+elId : (placeholder ? 'getByPlaceholder("'+placeholder+'")' : 'getByLabel("'+label+'")'));
         if (type === 'file') { lines.push('  FIELD (skip-file): label="'+label+'"'); return; }
         if (el.tagName === 'SELECT') {
           var opts = Array.from(el.options).map(function(o){return o.text.trim();}).filter(function(t){return t && t!=='—';});
-          lines.push('  FIELD: type=select  label="'+label+'"  options: ['+opts.slice(0,10).join(' | ')+']');
+          lines.push('  FIELD: type=select  label="'+label+'"  selector='+bestSelector+'  options: ['+opts.slice(0,10).join(' | ')+']');
           return;
         }
-        lines.push('  FIELD: type='+type+'  label="'+label+'"'+(placeholder?'  placeholder="'+placeholder+'"':''));
+        lines.push('  FIELD: type='+type+'  label="'+label+'"'+(placeholder?'  placeholder="'+placeholder+'"':'')+('  selector='+bestSelector));
       });
       var btn = document.querySelector('button[type="submit"], input[type="submit"]');
       if (btn) { var t=(btn.textContent||btn.value||'').trim(); lines.push('','  SUBMIT BUTTON: "'+t+'"'); }
@@ -278,8 +283,10 @@ RULES:
 2. EXACT TEXT ONLY — copy label/placeholder/button text CHARACTER FOR CHARACTER from the
    accessibility tree. "Contact Number" stays "Contact Number", never "Phone".
    "Order details" stays "Order details", never "Message". Wrong text = timeout.
-3. Prefer getByLabel (exact label text), then getByPlaceholder, then getByRole.
-   Use page.locator('[name="..."]') only when no label/placeholder exists.
+3. Use the SELECTOR from each FIELD line — it is pre-computed to avoid ambiguity.
+   e.g. if the field shows  selector=input[name="FirstName"]  use page.locator('input[name="FirstName"]')
+   CF7 and Elementor wrap inputs in <span aria-label="..."> so getByLabel() matches 2 elements and
+   causes a strict mode violation. The selector field uses input[name] or #id to target only the input.
 4. CAPTCHA rule — if the tree contains CAPTCHA_PRESENT:
    - Fill the form fields and verify with toHaveValue()
    - Do NOT assert the submit button is enabled (CAPTCHA keeps it disabled)
