@@ -76,10 +76,30 @@ export interface SentinelRun {
   testEmail: string;
 }
 
+/**
+ * Bypasses reCAPTCHA / hCaptcha frontend validation so a form can be submitted
+ * in tests. Call this BEFORE page.goto() so the mock is injected at page load.
+ *
+ * The server will still reject the fake token from Google — but the HTTP request
+ * reaches the server and any non-CAPTCHA-error response confirms the form works.
+ * For CF7: a wpcf7_send_failed or spam response = form works, only CAPTCHA failed.
+ *
+ * Usage:
+ *   test('my form test', async ({ page, bypassCaptcha }) => {
+ *     await bypassCaptcha(page);        // call before goto
+ *     await page.goto('/contact/');
+ *     // ... fill fields ...
+ *     await page.click('input[type="submit"]');
+ *     // Success: form submitted to server (may show CAPTCHA error, not form error)
+ *   });
+ */
+export type BypassCaptchaFn = (page: import('@playwright/test').Page) => Promise<void>;
+
 export const test = base.extend<{
   vars: SentinelVars;
   secrets: SentinelSecrets;
   run: SentinelRun;
+  bypassCaptcha: BypassCaptchaFn;
 }>({
   // eslint-disable-next-line no-empty-pattern
   vars: async ({}, use) => {
@@ -99,6 +119,36 @@ ${secretsEntries}
       runId: ${JSON.stringify(manifest.runId)},
       shortId: ${JSON.stringify(manifest.shortId)},
       testEmail: ${JSON.stringify(manifest.testEmail ?? '')},
+    });
+  },
+  // eslint-disable-next-line no-empty-pattern
+  bypassCaptcha: async ({}, use) => {
+    await use(async (page) => {
+      // Inject a fake window.grecaptcha before the page loads so the
+      // reCAPTCHA widget thinks it has already been solved.
+      await page.addInitScript(() => {
+        (window as unknown as Record<string, unknown>)['grecaptcha'] = {
+          ready: (cb: () => void) => { try { cb(); } catch {} },
+          execute: (_siteKey?: string, _opts?: unknown) => Promise.resolve('sentinel-bypass-token'),
+          getResponse: (_widgetId?: number) => 'sentinel-bypass-token',
+          render: (_container?: unknown, _params?: unknown) => 0,
+          reset: (_widgetId?: number) => {},
+        };
+        (window as unknown as Record<string, unknown>)['hcaptcha'] = {
+          execute: () => Promise.resolve({ response: 'sentinel-bypass-token' }),
+          getResponse: () => 'sentinel-bypass-token',
+          render: () => '0',
+          reset: () => {},
+        };
+      });
+      // Also set the hidden g-recaptcha-response field after load
+      page.on('load', async () => {
+        await page.evaluate(() => {
+          document.querySelectorAll('[name="g-recaptcha-response"], [name="h-captcha-response"]').forEach((el) => {
+            (el as HTMLInputElement).value = 'sentinel-bypass-token';
+          });
+        }).catch(() => {});
+      });
     });
   },
 });

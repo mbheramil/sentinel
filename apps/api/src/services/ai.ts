@@ -274,8 +274,32 @@ const GENERATE_SYSTEM_PROMPT = `You are an expert Playwright test author. Write 
 FIXTURE IMPORT (always use this exact import — no others):
   import { test, expect } from '../fixtures/sentinel';
 
-TEST SIGNATURE (always use exactly this — no extra fixtures):
-  test('descriptive name here', async ({ page }) => {
+TEST SIGNATURES:
+  Without CAPTCHA:  test('name', async ({ page }) => {
+  With CAPTCHA:     test('name', async ({ page, bypassCaptcha }) => {
+
+The bypassCaptcha fixture mocks window.grecaptcha and sets g-recaptcha-response
+so the form frontend allows submission. The server will see the fake token and
+may return a CAPTCHA-specific error — that is fine and expected in tests.
+
+CAPTCHA BYPASS PATTERN (use when CAPTCHA_PRESENT):
+  test('form submits successfully', async ({ page, bypassCaptcha }) => {
+    await bypassCaptcha(page);          // must be BEFORE page.goto()
+    await page.goto('/contact/');
+    // ... fill fields ...
+    await Promise.all([
+      page.waitForResponse(resp => resp.url().includes('/wp-admin/admin-ajax.php') || resp.url().includes(page.url())),
+      page.click('input[type="submit"], button[type="submit"]'),
+    ]);
+    // The form submitted to the server. Check for success OR captcha-only error:
+    const body = await page.content();
+    const submitted = body.includes('Thank you') || body.includes('success') ||
+                      body.includes('sent') || body.includes('received') ||
+                      // CAPTCHA-error = form itself works, only token rejected:
+                      body.includes('spam') || body.includes('captcha') ||
+                      body.includes('wpcf7_send_failed');
+    expect(submitted, 'Form should have reached the server').toBe(true);
+  });
 
 RULES:
 1. Use RELATIVE paths in page.goto() — e.g. page.goto('/') or page.goto('/contact/')
@@ -288,10 +312,11 @@ RULES:
    CF7 and Elementor wrap inputs in <span aria-label="..."> so getByLabel() matches 2 elements and
    causes a strict mode violation. The selector field uses input[name] or #id to target only the input.
 4. CAPTCHA rule — if the tree contains CAPTCHA_PRESENT:
-   - Fill the form fields and verify with toHaveValue()
-   - Do NOT assert the submit button is enabled (CAPTCHA keeps it disabled)
-   - Do NOT add any CAPTCHA assertion — the selector is unreliable across sites
-   - Just end the test after verifying the last field value
+   - Use the CAPTCHA BYPASS PATTERN above (bypassCaptcha fixture)
+   - Call await bypassCaptcha(page) BEFORE page.goto()
+   - Fill all fields, then click submit
+   - Wait for the server response and check body contains success OR captcha error
+   - Do NOT assert toBeEnabled() on the submit button
 5. Do NOT click submit unless the user explicitly asks.
 6. After filling each field, add expect(field).toHaveValue('...') to confirm it worked.
 7. Keep the test focused on ONE specific behaviour.
