@@ -143,23 +143,44 @@ function assertSafeUrl(raw: string): URL {
 
 // ── Accessibility-tree extraction ─────────────────────────────────────────────
 
+async function extractWithPlaywright(url: string): Promise<string> {
+  // Use the globally installed Playwright to render the page with JavaScript
+  // so JS-rendered forms (Elementor, CF7, Gravity Forms, etc.) are visible.
+  const { chromium } = await import('@playwright/test');
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const ctx = await browser.newContext({ userAgent: 'Sentinel-TestGen/1.0' });
+    const page = await ctx.newPage();
+    await page.goto(url, { timeout: 15_000, waitUntil: 'domcontentloaded' });
+    // Wait a moment for JS-rendered forms to appear
+    await page.waitForTimeout(2000);
+    return await page.content();
+  } finally {
+    await browser.close();
+  }
+}
+
 async function extractAccessibilityTree(rawUrl: string, maxChars = 32_000): Promise<string> {
   const parsed = assertSafeUrl(rawUrl);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12_000);
+
+  // Try Playwright first (renders JS); fall back to plain fetch if unavailable
   let html: string;
   try {
-    const res = await fetch(parsed.href, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Sentinel-TestGen/1.0 (accessibility-tree-extractor)',
-        'Accept': 'text/html',
-      },
-      redirect: 'follow',
-    });
-    html = await res.text();
-  } finally {
-    clearTimeout(timer);
+    html = await extractWithPlaywright(parsed.href);
+  } catch {
+    // Fallback: plain fetch (no JS rendering)
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12_000);
+    try {
+      const res = await fetch(parsed.href, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'Sentinel-TestGen/1.0', Accept: 'text/html' },
+        redirect: 'follow',
+      });
+      html = await res.text();
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   const lines: string[] = [];
