@@ -284,10 +284,14 @@ ${STEP_IR_SCHEMA_SUMMARY}
 RULES:
 1. Prefer role-based locators (by:"role") over css/xpath.
 2. Use by:"label" for form inputs linked to a <label>.
-3. Always start with a goto step for the target URL.
-4. Use group steps to organise related actions.
+3. Always start with a goto step. Use a RELATIVE path like "/" or "/contact/" — NOT the full URL.
+   The environment's baseURL is already set to the site domain.
+4. Use group steps to organise related actions (e.g. "Fill form", "Verify result").
 5. Add expect steps to verify important state after interactions.
 6. Keep secrets out of literal values — use { "secret": "..." } instead.
+7. The test function signature is: async ({ page, vars, secrets, run }) — do NOT add "capture".
+8. Do NOT include a submit/click-submit step unless the user explicitly says to submit.
+   For form tests: fill fields and assert the submit button is enabled, then stop.
 
 RESPONSE FORMAT (output ONLY this JSON, no prose, no code blocks):
 {

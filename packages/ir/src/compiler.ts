@@ -504,7 +504,7 @@ function compileStep(
 
 const FILE_HEADER = `import { test, expect } from '../fixtures/sentinel';
 
-test('TODO — add test title', async ({ page, vars, secrets, run, capture }) => {`;
+test('TODO — add test title', async ({ page, vars, secrets, run }) => {`;
 
 const FILE_FOOTER = `});`;
 
