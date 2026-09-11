@@ -197,7 +197,7 @@ async function extractWithPlaywright(url: string): Promise<string> {
       var btn = document.querySelector('button[type="submit"], input[type="submit"]');
       if (btn) { var t=(btn.textContent||btn.value||'').trim(); lines.push('','  SUBMIT BUTTON: "'+t+'"'); }
       var captcha = document.querySelector('.g-recaptcha,.h-captcha,iframe[title*="reCAPTCHA"],[class*="captcha"]');
-      if (captcha) { lines.push('','  CAPTCHA_PRESENT — do NOT assert toBeEnabled() on submit.','  Assert: await expect(page.locator(\\'.g-recaptcha\\')).toBeVisible();'); }
+      if (captcha) { lines.push('','  CAPTCHA_PRESENT — do NOT assert toBeEnabled() on submit. Do NOT add any CAPTCHA assertion. Just stop after verifying the form fields.'); }
       lines.push('','=== END ===');
       return lines.join('\\n');
     `) as unknown;
@@ -283,7 +283,8 @@ RULES:
 4. CAPTCHA rule — if the tree contains CAPTCHA_PRESENT:
    - Fill the form fields and verify with toHaveValue()
    - Do NOT assert the submit button is enabled (CAPTCHA keeps it disabled)
-   - Just assert page.locator('.g-recaptcha, iframe[title*="reCAPTCHA"]').toBeVisible()
+   - Do NOT add any CAPTCHA assertion — the selector is unreliable across sites
+   - Just end the test after verifying the last field value
 5. Do NOT click submit unless the user explicitly asks.
 6. After filling each field, add expect(field).toHaveValue('...') to confirm it worked.
 7. Keep the test focused on ONE specific behaviour.
