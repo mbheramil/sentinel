@@ -277,28 +277,28 @@ Assertion:
   page url/title: { on:"page", is:"url"|"title", expected:ValueRef, not?:boolean }
 `.trim();
 
-const GENERATE_SYSTEM_PROMPT = `You are an expert Playwright test author. Generate a test in Step IR JSON format.
+const GENERATE_SYSTEM_PROMPT = `You are an expert Playwright test author. Write a Playwright test in TypeScript.
 
-${STEP_IR_SCHEMA_SUMMARY}
+FIXTURE IMPORT (always use this exact import — no others):
+  import { test, expect } from '../fixtures/sentinel';
+
+TEST SIGNATURE (always use exactly this — no extra fixtures):
+  test('descriptive name here', async ({ page }) => {
 
 RULES:
-1. ONLY use step kinds from the schema above. NEVER invent new kinds like "verify", "navigate",
-   "assert", "input", "submit", "check_title", etc. Invalid kinds cause a hard error.
-2. Prefer role-based locators (by:"role") over css/xpath.
-3. Use by:"label" for form inputs linked to a <label>.
-4. Always start with a goto step. Use a RELATIVE path like "/" or "/contact/" — NOT the full URL.
-   The environment's baseURL is already set to the site domain.
-5. Use group steps to organise related actions (e.g. "Fill form", "Verify result").
-6. Add expect steps to verify important state after interactions.
-7. Keep secrets out of literal values — use { "secret": "..." } instead.
-8. The test function signature is: async ({ page, vars, secrets, run }) — do NOT add "capture".
-9. Do NOT include a submit/click-submit step unless the user explicitly says to submit.
-   For form tests: fill fields and assert the submit button is enabled, then stop.
+1. Use RELATIVE paths in page.goto() — e.g. page.goto('/') or page.goto('/contact/')
+   The baseURL is already set to the target site.
+2. Prefer getByRole, getByLabel, getByPlaceholder over CSS selectors.
+3. After filling a form, assert the submit button is enabled. Do NOT click submit
+   unless the user explicitly asks to submit the form.
+4. Add expect() assertions to verify key states.
+5. Keep the test focused on ONE specific behaviour.
+6. Use clear, descriptive test and variable names.
 
-RESPONSE FORMAT (output ONLY this JSON, no prose, no code blocks):
+RESPONSE FORMAT (output ONLY this JSON — no prose, no markdown code blocks):
 {
-  "ir": { "version": 1, "steps": [...] },
-  "explanation": "Brief plain-English explanation of what this test does."
+  "code": "the complete TypeScript test file as a string",
+  "explanation": "one sentence describing what this test does"
 }`;
 
 // ── Provider availability check ───────────────────────────────────────────────
@@ -375,40 +375,31 @@ export async function generateTest(opts: GenerateTestOptions): Promise<GenerateT
     );
   }
 
-  // Expect wrapper { ir: StepIr, explanation: string }
   if (
     typeof parsed !== 'object' ||
     parsed === null ||
-    !('ir' in parsed) ||
+    !('code' in parsed) ||
     !('explanation' in parsed)
   ) {
     throw Object.assign(
-      new Error('AI response does not match expected shape { ir, explanation }'),
+      new Error('AI response does not match expected shape { code, explanation }'),
       { statusCode: 502 },
     );
   }
 
-  const wrapper = parsed as { ir: unknown; explanation: unknown };
+  const wrapper = parsed as { code: unknown; explanation: unknown };
 
-  // Validate the IR — this is the security boundary (§8.3)
-  const irResult = StepIrSchema.safeParse(wrapper.ir);
-  if (!irResult.success) {
-    const issues = irResult.error.errors
-      .slice(0, 5)
-      .map((e) => `${e.path.join('.')}: ${e.message}`)
-      .join('; ');
-    throw Object.assign(
-      new Error(`AI-generated IR failed schema validation: ${issues}`),
-      { statusCode: 502 },
-    );
+  const code = typeof wrapper.code === 'string' ? wrapper.code.trim() : '';
+  if (!code) {
+    throw Object.assign(new Error('AI returned empty code'), { statusCode: 502 });
   }
-  const stepsIr = irResult.data;
-
-  // Compile IR → code through the trusted compiler
-  const { code } = await compile(stepsIr);
 
   const explanation =
     typeof wrapper.explanation === 'string' ? wrapper.explanation : 'AI-generated test.';
+
+  // Return a minimal stepsIr placeholder — the real content is in `code`.
+  // The route stores the code directly; stepsIr is for display only.
+  const stepsIr: StepIr = { version: 1, steps: [] };
 
   return { stepsIr, code, explanation, model, inputTokens, outputTokens };
 }
