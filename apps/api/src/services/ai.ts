@@ -332,11 +332,13 @@ RULES:
 6. After filling each field, add expect(field).toHaveValue('...') to confirm it worked.
 7. Keep the test focused on ONE specific behaviour.
 
-RESPONSE FORMAT (output ONLY this JSON — no prose, no markdown code blocks):
-{
-  "code": "the complete TypeScript test file as a string",
-  "explanation": "one sentence describing what this test does"
-}`;
+RESPONSE FORMAT — use these exact delimiters, nothing else before or after:
+
+===CODE===
+<the complete TypeScript test file here — no markdown fences>
+===EXPLANATION===
+<one sentence describing what this test does>
+===END===`;
 
 // ── Provider availability check ───────────────────────────────────────────────
 
@@ -396,43 +398,32 @@ export async function generateTest(opts: GenerateTestOptions): Promise<GenerateT
   const { text: rawText, inputTokens, outputTokens, model } =
     await callLLM(GENERATE_SYSTEM_PROMPT, userMessage, opts.deepMode ?? false);
 
-  // Parse JSON — strip any accidental markdown fences
-  const jsonText = rawText
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim();
+  // Parse delimiter format: ===CODE=== ... ===EXPLANATION=== ... ===END===
+  const codeMatch = rawText.match(/===CODE===\s*([\s\S]*?)\s*===EXPLANATION===/);
+  const explanationMatch = rawText.match(/===EXPLANATION===\s*([\s\S]*?)\s*===END===/);
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(jsonText);
-  } catch (e) {
-    throw Object.assign(
-      new Error(`AI response is not valid JSON: ${(e as Error).message}`),
-      { statusCode: 502 },
-    );
+  let code = codeMatch?.[1]?.trim() ?? '';
+  let explanation = explanationMatch?.[1]?.trim() ?? '';
+
+  // Fallback: try JSON if the AI ignored the delimiter instruction
+  if (!code) {
+    try {
+      const jsonText = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+      const parsed = JSON.parse(jsonText) as Record<string, unknown>;
+      code = typeof parsed['code'] === 'string' ? parsed['code'].trim() : '';
+      explanation = typeof parsed['explanation'] === 'string' ? parsed['explanation'] : '';
+    } catch {
+      // ignore — will fail below
+    }
   }
 
-  if (
-    typeof parsed !== 'object' ||
-    parsed === null ||
-    !('code' in parsed) ||
-    !('explanation' in parsed)
-  ) {
-    throw Object.assign(
-      new Error('AI response does not match expected shape { code, explanation }'),
-      { statusCode: 502 },
-    );
-  }
+  // Strip any accidental markdown fences around the code
+  code = code.replace(/^```(?:typescript|ts)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
-  const wrapper = parsed as { code: unknown; explanation: unknown };
-
-  const code = typeof wrapper.code === 'string' ? wrapper.code.trim() : '';
   if (!code) {
     throw Object.assign(new Error('AI returned empty code'), { statusCode: 502 });
   }
-
-  const explanation =
-    typeof wrapper.explanation === 'string' ? wrapper.explanation : 'AI-generated test.';
+  if (!explanation) explanation = 'AI-generated test.';
 
   // Return a minimal stepsIr placeholder — the real content is in `code`.
   // The route stores the code directly; stepsIr is for display only.
