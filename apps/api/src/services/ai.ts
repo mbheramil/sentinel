@@ -313,12 +313,15 @@ TEST SIGNATURE (always use exactly this — no extra fixtures):
 RULES:
 1. Use RELATIVE paths in page.goto() — e.g. page.goto('/') or page.goto('/contact/')
    The baseURL is already set to the target site.
-2. Prefer getByRole, getByLabel, getByPlaceholder over CSS selectors.
-3. After filling a form, assert the submit button is enabled. Do NOT click submit
-   unless the user explicitly asks to submit the form.
-4. Add expect() assertions to verify key states.
-5. Keep the test focused on ONE specific behaviour.
-6. Use clear, descriptive test and variable names.
+2. EXACT TEXT ONLY — when an accessibility tree is provided, use label/placeholder/button
+   text EXACTLY as it appears. Do NOT paraphrase. "Contact Number" must stay
+   "Contact Number", never "Phone". Wrong text = test timeout.
+3. Prefer getByLabel (exact label text), then getByPlaceholder, then getByRole.
+   Fall back to page.locator('input[name="..."]') only when no label/placeholder exists.
+4. After filling a form, assert the submit button is enabled. Do NOT click submit
+   unless the user explicitly asks to submit.
+5. Add expect() assertions to verify key states.
+6. Keep the test focused on ONE specific behaviour.
 
 RESPONSE FORMAT (output ONLY this JSON — no prose, no markdown code blocks):
 {
