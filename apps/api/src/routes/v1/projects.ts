@@ -247,20 +247,27 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
 
       authorize(actor, 'projects:delete');
 
-      // The FK chain RunTest→TestCase isn't a cascade in the schema, so a
-      // simple project.delete() fails with P2003. Delete in dependency order.
-      await prisma.$transaction([
-        // RunTest rows reference both Run and TestCase; delete them first.
-        prisma.runTest.deleteMany({
-          where: { run: { projectId: project.id } },
-        }),
-        // Now runs and testCases can be deleted safely.
-        prisma.run.deleteMany({ where: { projectId: project.id } }),
-        prisma.testCase.deleteMany({ where: { projectId: project.id } }),
-        prisma.environment.deleteMany({ where: { projectId: project.id } }),
-        prisma.schedule.deleteMany({ where: { projectId: project.id } }),
-        prisma.project.delete({ where: { id: project.id } }),
-      ]);
+      // Many FK relations in the schema lack onDelete: Cascade, so a bare
+      // project.delete() throws P2003. Delete in strict dependency order.
+      await prisma.$transaction(async (tx) => {
+        // 1. Notifications and capture events reference Run (no cascade)
+        await tx.notification.deleteMany({ where: { run: { projectId: project.id } } });
+        await tx.captureEvent.deleteMany({ where: { run: { projectId: project.id } } });
+        // 2. RunTest references both Run and TestCase (no cascade on either)
+        await tx.runTest.deleteMany({ where: { run: { projectId: project.id } } });
+        // 3. Runs reference Environment (no cascade)
+        await tx.run.deleteMany({ where: { projectId: project.id } });
+        // 4. TestCase rows are now unreferenced by RunTest
+        await tx.testCase.deleteMany({ where: { projectId: project.id } });
+        // 5. Schedules reference Environment (no cascade); delete before Environments
+        await tx.schedule.deleteMany({ where: { projectId: project.id } });
+        // 6. Integrations reference Project (no cascade)
+        await tx.integration.deleteMany({ where: { projectId: project.id } });
+        // 7. Environments
+        await tx.environment.deleteMany({ where: { projectId: project.id } });
+        // 8. Finally the project itself
+        await tx.project.delete({ where: { id: project.id } });
+      });
       return reply.status(200).send({ ok: true });
     },
   );
