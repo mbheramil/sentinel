@@ -126,11 +126,10 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
 
       authorize(actor, 'tests:create');
 
-      // Rate limit: 10 generate calls / hour / org
-      await checkGenerateRateLimit(orgId);
-
+      // Rate limit + generation — both wrapped so thrown errors get the right shape
       let result;
       try {
+        await checkGenerateRateLimit(orgId);
         result = await generateTest({
           prompt: req.body.prompt,
           url: req.body.url,
@@ -138,10 +137,12 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
           deepMode: req.body.deepMode ?? false,
         });
       } catch (err) {
-        const e = err as Error & { statusCode?: number };
-        const status = (e.statusCode === 400 || e.statusCode === 402 || e.statusCode === 429 ? e.statusCode : 502) as 400 | 402 | 429 | 502;
+        const e = err as Error & { statusCode?: number; code?: string };
+        const status = ([400, 402, 429, 502] as number[]).includes(e.statusCode ?? 0)
+          ? (e.statusCode as 400 | 402 | 429 | 502)
+          : 502;
         return reply.status(status).send({
-          error: { code: 'AI_ERROR', message: e.message ?? 'AI generation failed' },
+          error: { code: e.code ?? 'AI_ERROR', message: e.message ?? 'AI generation failed' },
         });
       }
 
