@@ -187,82 +187,86 @@ async function extractAccessibilityTree(rawUrl: string, maxChars = 32_000): Prom
     }
   }
 
-  const lines: string[] = [];
-
-  const push = (line: string) => {
-    if (lines.length < 2000) lines.push(line.trim());
-  };
-
   // Strip scripts and styles to reduce noise
   html = html
     .replace(/<script[\s\S]*?<\/script>/gi, '')
     .replace(/<style[\s\S]*?<\/style>/gi, '');
 
-  // Headings
-  for (const m of html.matchAll(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi)) {
-    const text = m[2]!.replace(/<[^>]+>/g, '').trim();
-    if (text) push(`heading level=${m[1]}: "${text}"`);
-  }
+  // ── FORM SUMMARY (shown first so AI sees it before any noise) ────────────────
+  // Build a structured list of form fields with their exact labels.
+  // This is the primary data the AI must use — do not paraphrase these strings.
+  const formLines: string[] = ['=== FORM FIELDS (use EXACT text below for getByLabel/getByPlaceholder) ==='];
 
-  // Buttons
-  for (const m of html.matchAll(/<button[^>]*>([\s\S]*?)<\/button>/gi)) {
-    const text = m[1]!.replace(/<[^>]+>/g, '').trim();
-    const ariaLabel = m[0].match(/aria-label="([^"]+)"/i)?.[1];
-    if (text || ariaLabel) push(`button: "${ariaLabel ?? text}"`);
-  }
-
-  // Links
-  for (const m of html.matchAll(/<a\s[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)) {
-    const text = m[2]!.replace(/<[^>]+>/g, '').trim();
-    if (text) push(`link href="${m[1]}": "${text}"`);
-  }
-
-  // Inputs
+  // Map input id → placeholder for cross-referencing with labels
+  const idToPlaceholder = new Map<string, string>();
+  const idToType = new Map<string, string>();
   for (const m of html.matchAll(/<input([^>]*)>/gi)) {
     const attrs = m[1]!;
-    const type = attrs.match(/type="([^"]+)"/i)?.[1] ?? 'text';
-    const name = attrs.match(/name="([^"]+)"/i)?.[1] ?? '';
+    const id = attrs.match(/\bid="([^"]+)"/i)?.[1] ?? '';
     const placeholder = attrs.match(/placeholder="([^"]+)"/i)?.[1] ?? '';
-    const ariaLabel = attrs.match(/aria-label="([^"]+)"/i)?.[1] ?? '';
-    const id = attrs.match(/id="([^"]+)"/i)?.[1] ?? '';
-    if (type === 'hidden') continue;
-    push(`input[type="${type}"]${name ? ` name="${name}"` : ''}${id ? ` id="${id}"` : ''}${placeholder ? ` placeholder="${placeholder}"` : ''}${ariaLabel ? ` aria-label="${ariaLabel}"` : ''}`);
+    const type = attrs.match(/type="([^"]+)"/i)?.[1] ?? 'text';
+    if (id) { idToPlaceholder.set(id, placeholder); idToType.set(id, type); }
   }
 
-  // Textareas
-  for (const m of html.matchAll(/<textarea([^>]*)>/gi)) {
-    const attrs = m[1]!;
-    const name = attrs.match(/name="([^"]+)"/i)?.[1] ?? '';
-    const ariaLabel = attrs.match(/aria-label="([^"]+)"/i)?.[1] ?? '';
-    push(`textarea${name ? ` name="${name}"` : ''}${ariaLabel ? ` aria-label="${ariaLabel}"` : ''}`);
-  }
-
-  // Selects
-  for (const m of html.matchAll(/<select([^>]*)>/gi)) {
-    const attrs = m[1]!;
-    const name = attrs.match(/name="([^"]+)"/i)?.[1] ?? '';
-    const ariaLabel = attrs.match(/aria-label="([^"]+)"/i)?.[1] ?? '';
-    push(`select${name ? ` name="${name}"` : ''}${ariaLabel ? ` aria-label="${ariaLabel}"` : ''}`);
-  }
-
-  // Labels — with their associated input id so we know which field each label belongs to
+  // Labels paired with their fields
+  const seenLabels = new Set<string>();
   for (const m of html.matchAll(/<label([^>]*)>([\s\S]*?)<\/label>/gi)) {
-    const text = m[2]!.replace(/<[^>]+>/g, '').trim().replace(/\s+/g, ' ');
-    const forAttr = m[1]!.match(/for="([^"]+)"/i)?.[1] ?? '';
-    if (text) push(`label${forAttr ? ` for="${forAttr}"` : ''}: "${text}"`);
+    const rawText = m[2]!.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    // Strip trailing asterisk (required marker) for clean label text
+    const labelText = rawText.replace(/\s*\*\s*$/, '').trim();
+    if (!labelText || seenLabels.has(labelText)) continue;
+    seenLabels.add(labelText);
+    const forId = m[1]!.match(/for="([^"]+)"/i)?.[1] ?? '';
+    const placeholder = forId ? (idToPlaceholder.get(forId) ?? '') : '';
+    const type = forId ? (idToType.get(forId) ?? 'text') : 'text';
+    const info = [
+      `label: "${labelText}"`,
+      type !== 'text' ? `type=${type}` : '',
+      placeholder ? `placeholder="${placeholder}"` : '',
+    ].filter(Boolean).join('  ');
+    formLines.push(`  ${info}`);
   }
 
-  // CAPTCHA detection — critical: affects whether submit button can be asserted enabled
-  const hasCaptcha =
-    /g-recaptcha|h-captcha|recaptcha|hcaptcha|turnstile/i.test(html);
-  if (hasCaptcha) push(`CAPTCHA_PRESENT: reCAPTCHA or hCaptcha detected on this page`);
-
-  // Main landmarks
-  for (const m of html.matchAll(/<(main|nav|header|footer|section|article)[^>]*aria-label="([^"]+)"/gi)) {
-    push(`${m[1]} role, aria-label="${m[2]}"`);
+  // Selects with options
+  for (const m of html.matchAll(/<select([^>]*)>([\s\S]*?)<\/select>/gi)) {
+    const id = m[1]!.match(/\bid="([^"]+)"/i)?.[1] ?? '';
+    const options = [...(m[2]!).matchAll(/<option[^>]*value="([^"]+)"[^>]*>([\s\S]*?)<\/option>/gi)]
+      .map(o => o[2]!.replace(/<[^>]+>/g, '').trim())
+      .filter(Boolean)
+      .slice(0, 8);
+    if (id && options.length) formLines.push(`  select id="${id}" options: ${options.join(', ')}`);
   }
 
-  const result = lines.join('\n');
+  // Textareas with placeholders
+  for (const m of html.matchAll(/<textarea([^>]*)>/gi)) {
+    const placeholder = m[1]!.match(/placeholder="([^"]+)"/i)?.[1] ?? '';
+    if (placeholder) formLines.push(`  textarea  placeholder="${placeholder}"`);
+  }
+
+  // Submit buttons
+  for (const m of html.matchAll(/<(button|input)[^>]*type="submit"[^>]*>/gi)) {
+    const val = m[0].match(/value="([^"]+)"/i)?.[1] ?? '';
+    const text = m[0].match(/>[^<]*/)?.[0]?.replace('>', '').trim() ?? '';
+    const label = val || text;
+    if (label) formLines.push(`  submit button: "${label}"`);
+  }
+
+  // CAPTCHA detection — if present, do NOT assert submit button isEnabled()
+  const hasCaptcha = /g-recaptcha|h-captcha|recaptcha|hcaptcha|turnstile/i.test(html);
+  if (hasCaptcha) formLines.push(`  CAPTCHA_PRESENT: reCAPTCHA detected — submit button stays disabled; do not assert toBeEnabled()`);
+
+  formLines.push('=== END FORM FIELDS ===');
+
+  // ── Other page elements (secondary context) ──────────────────────────────────
+  const otherLines: string[] = [];
+  const pushOther = (line: string) => { if (otherLines.length < 200) otherLines.push(line.trim()); };
+
+  for (const m of html.matchAll(/<h([1-3])[^>]*>([\s\S]*?)<\/h\1>/gi)) {
+    const text = m[2]!.replace(/<[^>]+>/g, '').trim();
+    if (text) pushOther(`heading: "${text}"`);
+  }
+
+  const result = [...formLines, '', ...otherLines].join('\n');
   return result.length > maxChars ? result.slice(0, maxChars) + '\n... (truncated)' : result;
 }
 
