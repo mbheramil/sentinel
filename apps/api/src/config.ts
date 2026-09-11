@@ -28,6 +28,12 @@ const ConfigSchema = z.object({
   GITHUB_CLIENT_ID: z.string().optional(),
   GITHUB_CLIENT_SECRET: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
+  OPENAI_API_KEY: z.string().optional(),
+  AWS_ACCESS_KEY_ID: z.string().optional(),
+  AWS_SECRET_ACCESS_KEY: z.string().optional(),
+  AWS_REGION: z.string().default('us-east-1'),
+  BEDROCK_MODEL_DEFAULT: z.string().default('us.anthropic.claude-sonnet-4-5'),
+  BEDROCK_MODEL_DEEP: z.string().default('us.anthropic.claude-opus-4-5'),
   AI_MODEL_DEFAULT: z.string().default('claude-sonnet-5'),
   AI_MODEL_DEEP: z.string().default('claude-opus-5'),
 });

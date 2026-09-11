@@ -7,6 +7,8 @@
  *   compiler is the only path from IR to code.
  */
 import Anthropic from '@anthropic-ai/sdk';
+import AnthropicBedrock from '@anthropic-ai/bedrock-sdk';
+import OpenAI from 'openai';
 import { createHash } from 'node:crypto';
 import { prisma } from '@sentinel/db';
 import { StepIrSchema, compile } from '@sentinel/ir';
@@ -18,11 +20,92 @@ import { config } from '../config.js';
 const PRICING: Record<string, { input: number; output: number }> = {
   'claude-sonnet-5': { input: 3, output: 15 },
   'claude-opus-5': { input: 15, output: 75 },
+  'gpt-4o': { input: 2, output: 8 },
+  'gpt-4o-mini': { input: 0, output: 0 },
 };
 
 function calcCostMicro(model: string, inputTokens: number, outputTokens: number): number {
   const price = PRICING[model] ?? PRICING['claude-sonnet-5']!;
   return price.input * inputTokens + price.output * outputTokens;
+}
+
+// ── Provider detection ────────────────────────────────────────────────────────
+
+type Provider = 'anthropic' | 'openai' | 'bedrock';
+
+function detectProvider(): Provider {
+  if (config.ANTHROPIC_API_KEY) return 'anthropic';
+  if (config.AWS_ACCESS_KEY_ID && config.AWS_SECRET_ACCESS_KEY) return 'bedrock';
+  if (config.OPENAI_API_KEY) return 'openai';
+  return 'anthropic'; // will fail with a helpful message in resolveApiKey
+}
+
+// ── Unified completions interface ─────────────────────────────────────────────
+
+interface CompletionResult {
+  text: string;
+  inputTokens: number;
+  outputTokens: number;
+  model: string;
+}
+
+async function callLLM(system: string, user: string, deepMode: boolean): Promise<CompletionResult> {
+  const provider = detectProvider();
+
+  if (provider === 'anthropic') {
+    const client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY! });
+    const model = deepMode ? config.AI_MODEL_DEEP : config.AI_MODEL_DEFAULT;
+    const res = await client.messages.create({
+      model, max_tokens: 4096,
+      system,
+      messages: [{ role: 'user', content: user }],
+    });
+    const text = res.content.find((b) => b.type === 'text');
+    return {
+      text: text?.type === 'text' ? text.text : '',
+      inputTokens: res.usage.input_tokens,
+      outputTokens: res.usage.output_tokens,
+      model,
+    };
+  }
+
+  if (provider === 'bedrock') {
+    const client = new AnthropicBedrock({
+      awsAccessKey: config.AWS_ACCESS_KEY_ID!,
+      awsSecretKey: config.AWS_SECRET_ACCESS_KEY!,
+      awsRegion: config.AWS_REGION,
+    });
+    const model = deepMode ? config.BEDROCK_MODEL_DEEP : config.BEDROCK_MODEL_DEFAULT;
+    const res = await client.messages.create({
+      model, max_tokens: 4096,
+      system,
+      messages: [{ role: 'user', content: user }],
+    });
+    const textBlock = res.content.find((b) => b.type === 'text');
+    return {
+      text: textBlock?.type === 'text' ? textBlock.text : '',
+      inputTokens: res.usage.input_tokens,
+      outputTokens: res.usage.output_tokens,
+      model,
+    };
+  }
+
+  // OpenAI
+  const client = new OpenAI({ apiKey: config.OPENAI_API_KEY! });
+  const model = deepMode ? 'gpt-4o' : 'gpt-4o-mini';
+  const res = await client.chat.completions.create({
+    model, max_tokens: 4096,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+  });
+  return {
+    text: res.choices[0]?.message?.content ?? '',
+    inputTokens: res.usage?.prompt_tokens ?? 0,
+    outputTokens: res.usage?.completion_tokens ?? 0,
+    model,
+  };
 }
 
 // ── SSRF guard ────────────────────────────────────────────────────────────────
@@ -212,34 +295,21 @@ RESPONSE FORMAT (output ONLY this JSON, no prose, no code blocks):
   "explanation": "Brief plain-English explanation of what this test does."
 }`;
 
-// ── Anthropic client factory ──────────────────────────────────────────────────
+// ── Provider availability check ───────────────────────────────────────────────
 
-function makeClient(apiKey: string): Anthropic {
-  return new Anthropic({ apiKey });
-}
-
-async function resolveApiKey(orgId: string): Promise<string> {
-  // Check the org's stored AI integration key first
-  const integration = await prisma.integration.findFirst({
-    where: { orgId, isEnabled: true },
-    select: { id: true },
-  });
-  // For now: fall back to the platform-level env key.
-  // A future phase can decrypt org-level BYO keys from integration.configCiphertext.
-  if (!integration && !config.ANTHROPIC_API_KEY) {
-    throw Object.assign(
-      new Error('No AI API key configured. Set ANTHROPIC_API_KEY or add an AI integration.'),
-      { statusCode: 402 },
-    );
-  }
-  const key = config.ANTHROPIC_API_KEY;
-  if (!key) {
-    throw Object.assign(
-      new Error('ANTHROPIC_API_KEY is not configured on this Sentinel instance.'),
-      { statusCode: 402 },
-    );
-  }
-  return key;
+function assertProviderConfigured(): void {
+  if (
+    config.ANTHROPIC_API_KEY ||
+    config.OPENAI_API_KEY ||
+    (config.AWS_ACCESS_KEY_ID && config.AWS_SECRET_ACCESS_KEY)
+  ) return;
+  throw Object.assign(
+    new Error(
+      'No AI provider configured. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or ' +
+      'AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY (Bedrock) in the server environment.',
+    ),
+    { statusCode: 402 },
+  );
 }
 
 // ── Generate test ─────────────────────────────────────────────────────────────
@@ -261,9 +331,7 @@ export interface GenerateTestResult {
 }
 
 export async function generateTest(opts: GenerateTestOptions): Promise<GenerateTestResult> {
-  const apiKey = await resolveApiKey(opts.orgId);
-  const model = opts.deepMode ? config.AI_MODEL_DEEP : config.AI_MODEL_DEFAULT;
-  const client = makeClient(apiKey);
+  assertProviderConfigured();
 
   // Optionally augment prompt with accessibility tree
   let userMessage = opts.prompt;
@@ -278,27 +346,12 @@ export async function generateTest(opts: GenerateTestOptions): Promise<GenerateT
         userMessage = `URL: ${opts.url}\n\nTest requirement: ${opts.prompt}`;
       }
     } catch {
-      // If fetch fails, proceed without the tree
       userMessage = `URL: ${opts.url}\n\nTest requirement: ${opts.prompt}`;
     }
   }
 
-  const response = await client.messages.create({
-    model,
-    max_tokens: 4096,
-    system: GENERATE_SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: userMessage }],
-  });
-
-  const inputTokens = response.usage.input_tokens;
-  const outputTokens = response.usage.output_tokens;
-
-  // Extract text content
-  const textBlock = response.content.find((b) => b.type === 'text');
-  if (!textBlock || textBlock.type !== 'text') {
-    throw Object.assign(new Error('AI returned no text content'), { statusCode: 502 });
-  }
-  const rawText = textBlock.text.trim();
+  const { text: rawText, inputTokens, outputTokens, model } =
+    await callLLM(GENERATE_SYSTEM_PROMPT, userMessage, opts.deepMode ?? false);
 
   // Parse JSON — strip any accidental markdown fences
   const jsonText = rawText
@@ -458,26 +511,12 @@ Confidence guide:
   medium — plausible cause but multiple possibilities
   low    — insufficient information to diagnose reliably`;
 
-  const apiKey = await resolveApiKey(opts.orgId);
-  const model = config.AI_MODEL_DEFAULT;
-  const client = makeClient(apiKey);
+  assertProviderConfigured();
 
-  const response = await client.messages.create({
-    model,
-    max_tokens: 512,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userMessage }],
-  });
+  const { text, inputTokens, outputTokens, model } =
+    await callLLM(systemPrompt, userMessage, false);
 
-  const inputTokens = response.usage.input_tokens;
-  const outputTokens = response.usage.output_tokens;
-
-  const textBlock = response.content.find((b) => b.type === 'text');
-  if (!textBlock || textBlock.type !== 'text') {
-    throw Object.assign(new Error('AI returned no text content'), { statusCode: 502 });
-  }
-
-  const rawText = textBlock.text.trim()
+  const rawText = text.trim()
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```$/i, '')
     .trim();
