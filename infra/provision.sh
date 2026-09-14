@@ -165,8 +165,15 @@ systemctl enable postgresql >/dev/null
 # ─────────────────────────────────────────────────────────────────────────────
 log "9/12  MinIO (S3 artifacts), bound to localhost only"
 if [[ ! -x /usr/local/bin/minio ]]; then
-  curl -fsSL https://dl.minio.io/server/minio/release/linux-amd64/minio -o /usr/local/bin/minio \
-    || curl -fsSL https://github.com/minio/minio/releases/latest/download/minio.linux-amd64 -o /usr/local/bin/minio
+  # MinIO releases moved to GitHub; find the latest AMD64 binary
+  MINIO_URL=$(curl -s https://api.github.com/repos/minio/minio/releases/latest \
+    | python3 -c "import sys,json; assets=json.load(sys.stdin).get('assets',[]); \
+      print(next((a['browser_download_url'] for a in assets if 'linux-amd64' in a['name'] and not a['name'].endswith('.sha256sum')),''))" 2>/dev/null)
+  if [ -z "$MINIO_URL" ]; then
+    warn "Could not resolve MinIO URL — using known stable release"
+    MINIO_URL="https://github.com/minio/minio/releases/download/RELEASE.2024-10-02T17-50-41Z/minio.linux-amd64"
+  fi
+  curl -fsSL "$MINIO_URL" -o /usr/local/bin/minio
   chmod +x /usr/local/bin/minio
 fi
 MINIO_USER="sentinel"
