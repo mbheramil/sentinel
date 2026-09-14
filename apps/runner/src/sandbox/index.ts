@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { join } from 'path';
 import type { Logger } from 'pino';
 import { Redis } from 'ioredis';
 import type { ChildProcess } from 'child_process';
@@ -77,17 +78,18 @@ async function runLocal(
 
   const shardArg = `--shard=${shardIndex + 1}/${shardTotal}`;
 
-  // Install workspace deps before running — the workspace package.json pins
-  // @playwright/test but has no node_modules yet.
-  runLog.info({ workDir }, 'Installing workspace dependencies');
-  await new Promise<void>((resolve, reject) => {
-    const install = spawn('npm', ['install', '--prefer-offline', '--silent'], {
-      cwd: workDir,
-      stdio: 'ignore',
-    });
-    install.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`npm install exited ${code}`))));
-    install.on('error', reject);
-  });
+  // Symlink the globally installed @playwright/test into the workspace so the
+  // config can import it — no npm install, no internet access, no supply-chain risk.
+  // Previous approach used `npm install --prefer-offline` which still reached the
+  // internet for metadata, making the workspace a malware injection point.
+  const { mkdirSync, symlinkSync, existsSync } = await import('node:fs');
+  const pwGlobal = '/usr/lib/node_modules/@playwright/test';
+  const pwLocal = join(workDir, 'node_modules', '@playwright', 'test');
+  if (existsSync(pwGlobal) && !existsSync(pwLocal)) {
+    mkdirSync(join(workDir, 'node_modules', '@playwright'), { recursive: true });
+    symlinkSync(pwGlobal, pwLocal);
+    runLog.info({ workDir }, 'Linked global @playwright/test into workspace (no npm install)');
+  }
 
   const playwrightCmd = ['npx', `@playwright/test@${PLAYWRIGHT_VERSION}`, 'test', shardArg];
 
