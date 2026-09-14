@@ -164,22 +164,32 @@ systemctl enable postgresql >/dev/null
 
 # ─────────────────────────────────────────────────────────────────────────────
 log "9/12  MinIO (S3 artifacts), bound to localhost only"
+MINIO_OK=false
 if [[ ! -x /usr/local/bin/minio ]]; then
-  # MinIO releases moved to GitHub; find the latest AMD64 binary
-  MINIO_URL=$(curl -s https://api.github.com/repos/minio/minio/releases/latest \
-    | python3 -c "import sys,json; assets=json.load(sys.stdin).get('assets',[]); \
-      print(next((a['browser_download_url'] for a in assets if 'linux-amd64' in a['name'] and not a['name'].endswith('.sha256sum')),''))" 2>/dev/null)
-  if [ -z "$MINIO_URL" ]; then
-    warn "Could not resolve MinIO URL — using known stable release"
-    MINIO_URL="https://github.com/minio/minio/releases/download/RELEASE.2024-10-02T17-50-41Z/minio.linux-amd64"
+  # Try several known-good URLs in order
+  for MINIO_URL in \
+    "https://dl.min.io/server/minio/release/linux-amd64/archive/minio.RELEASE.2024-10-02T17-50-41Z" \
+    "https://github.com/minio/minio/releases/download/RELEASE.2024-10-02T17-50-41Z/minio.linux-amd64" \
+    "https://dl.min.io/server/minio/release/linux-amd64/minio"; do
+    if curl -fsSL --max-time 30 "$MINIO_URL" -o /usr/local/bin/minio 2>/dev/null; then
+      chmod +x /usr/local/bin/minio
+      MINIO_OK=true
+      echo "MinIO downloaded from $MINIO_URL"
+      break
+    fi
+    warn "Failed: $MINIO_URL"
+  done
+  if [[ "$MINIO_OK" = false ]]; then
+    warn "MinIO download failed — artifact storage disabled (app will still run)"
   fi
-  curl -fsSL "$MINIO_URL" -o /usr/local/bin/minio
-  chmod +x /usr/local/bin/minio
+else
+  MINIO_OK=true
 fi
 MINIO_USER="sentinel"
 MINIO_PASS="$(openssl rand -base64 24 | tr -d '/+=' | head -c 24)"
-install -d -o "$APP_USER" -g "$APP_USER" /var/lib/minio
-cat > /etc/systemd/system/minio.service <<EOF
+if [[ "$MINIO_OK" = true ]]; then
+  install -d -o "$APP_USER" -g "$APP_USER" /var/lib/minio
+  cat > /etc/systemd/system/minio.service <<EOF
 [Unit]
 Description=MinIO object storage
 After=network.target
@@ -197,8 +207,11 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-systemctl daemon-reload
-systemctl enable --now minio >/dev/null
+  systemctl daemon-reload
+  systemctl enable --now minio >/dev/null
+else
+  warn "Skipping MinIO service setup — binary unavailable"
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 log "10/12  Clone app + generate fresh secrets"
