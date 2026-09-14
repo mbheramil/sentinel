@@ -165,7 +165,8 @@ systemctl enable postgresql >/dev/null
 # ─────────────────────────────────────────────────────────────────────────────
 log "9/12  MinIO (S3 artifacts), bound to localhost only"
 if [[ ! -x /usr/local/bin/minio ]]; then
-  curl -fsSL https://dl.min.io/server/minio/release/linux-amd64/minio -o /usr/local/bin/minio
+  curl -fsSL https://dl.minio.io/server/minio/release/linux-amd64/minio -o /usr/local/bin/minio \
+    || curl -fsSL https://github.com/minio/minio/releases/latest/download/minio.linux-amd64 -o /usr/local/bin/minio
   chmod +x /usr/local/bin/minio
 fi
 MINIO_USER="sentinel"
